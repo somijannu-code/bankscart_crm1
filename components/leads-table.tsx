@@ -73,7 +73,7 @@ interface Lead {
   loan_amount: number | null;
   loan_type: string | null;
   source: string | null;
-  assigned_to: string | null; // may store single id or CSV of ids (for CSV workaround)
+  assigned_to: string | null;
   assigned_user: {
     id: string;
     full_name: string;
@@ -117,7 +117,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
-  const [bulkAssignTo, setBulkAssignTo] = useState<string>(""); // CSV of telecaller ids or "unassigned"
+  const [bulkAssignTo, setBulkAssignTo] = useState<string>("");
   const [bulkStatus, setBulkStatus] = useState<string>("");
   const supabase = createClient();
 
@@ -127,17 +127,15 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       .map((lead) => lead.assigned_user?.id)
       .filter(Boolean) as string[],
     ...telecallers.map((t) => t.id),
-  ].filter((id, index, self) => self.indexOf(id) === index); // unique
+  ].filter((id, index, self) => self.indexOf(id) === index);
 
   const { telecallerStatus, loading: statusLoading } =
     useTelecallerStatus(allTelecallerIds);
 
-  // safe getter
   const getSafeValue = (value: any, defaultValue: string = "N/A") => {
     return value ?? defaultValue;
   };
 
-  // Filtering + searching
   const filteredLeads = leads
     .filter((lead) => {
       const matchesSearch =
@@ -178,7 +176,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       return 0;
     });
 
-  // pagination
   const totalPages = Math.max(1, Math.ceil(filteredLeads.length / pageSize));
   const paginatedLeads = filteredLeads.slice(
     (currentPage - 1) * pageSize,
@@ -271,16 +268,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     }
   };
 
-  /**
-   * handleAssignLead
-   * Accepts telecallerId which may be:
-   * - a single id string,
-   * - a CSV string of ids (e.g. "id1,id2"), or
-   * - the literal "unassigned" to clear assignment.
-   *
-   * We store the value in `assigned_to` as-is (CSV workaround).
-   * For notifications we only send when a non-unassigned value is present.
-   */
   const handleAssignLead = async (leadId: string, telecallerId: string) => {
     try {
       const { data: { user } = { user: null } } = await supabase.auth.getUser();
@@ -299,7 +286,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
 
       if (error) throw error;
 
-      // notifications: if telecallerId is CSV, notify each id
       if (assignedToValue) {
         const ids = String(assignedToValue).split(",").map((s) => s.trim()).filter(Boolean);
         const notifications = ids.map((id) => ({
@@ -343,7 +329,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       const { data: { user } = { user: null } } = await supabase.auth.getUser();
       const assignedById = user?.id ?? null;
 
-      // Handle the "unassigned" case first
       if (bulkAssignTo === "unassigned") {
         const updates = selectedLeads.map((leadId) =>
           supabase
@@ -362,9 +347,8 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
           throw new Error(`Failed to unassign ${errors.length} leads`);
         }
       } else {
-        // Distribute leads among selected telecallers
         const telecallerIds = bulkAssignTo.split(",").map((s) => s.trim()).filter(Boolean);
-        if (telecallerIds.length === 0) return; // Should not happen with the updated UI logic
+        if (telecallerIds.length === 0) return;
 
         const updates = selectedLeads.map((leadId, index) => {
           const telecallerId = telecallerIds[index % telecallerIds.length];
@@ -384,7 +368,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
           throw new Error(`Failed to assign ${errors.length} leads`);
         }
         
-        // Notifications
         const notifications = selectedLeads.map((leadId, index) => ({
           user_id: telecallerIds[index % telecallerIds.length],
           type: "lead_assignment",
@@ -623,7 +606,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
               Update Status
             </Button>
 
-            {/* Bulk Assignment (MULTI-SELECT using DropdownMenuCheckboxItem) */}
+            {/* Corrected Bulk Assignment */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="w-48 justify-between">
@@ -916,7 +899,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                                     .includes(telecaller.id)
                                 }
                                 onCheckedChange={(checked) => {
-                                  // Build new CSV string
                                   const existing = lead.assigned_to ? String(lead.assigned_to).split(",").map((s) => s.trim()).filter(Boolean) : [];
                                   let newAssignees = [...existing];
 
