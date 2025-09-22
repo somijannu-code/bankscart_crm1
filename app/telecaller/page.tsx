@@ -82,8 +82,7 @@ export default async function TelecallerDashboard() {
           </div>
         </div>
 
-        {/* Test Notifications - Remove this in production */}
-        <TestNotifications />
+      
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
