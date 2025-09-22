@@ -234,6 +234,18 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         .eq("id", leadId)
 
       if (error) throw error
+      
+      // --- INSERT NOTIFICATION WHEN ASSIGNED ---
+      if (telecallerId !== "unassigned") {
+        await supabase.from("notifications").insert({
+          user_id: telecallerId,
+          type: "lead_assignment",
+          title: "New Lead Assigned",
+          message: "A new lead has been assigned to you.",
+          lead_id: leadId,
+          read: false,
+        });
+      }
 
       console.log(`Lead ${leadId} assigned to ${telecallerId}`)
       window.location.reload()
@@ -287,6 +299,19 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         throw new Error(`Failed to assign ${errors.length} leads`)
       }
 
+      // --- INSERT NOTIFICATIONS WHEN BULK ASSIGNED ---
+      if (bulkAssignTo !== "unassigned") {
+        const notifications = selectedLeads.map(leadId => ({
+          user_id: bulkAssignTo,
+          type: "lead_assignment",
+          title: "New Lead Assigned",
+          message: "A new lead has been assigned to you.",
+          lead_id: leadId,
+          read: false,
+        }));
+        await supabase.from("notifications").insert(notifications);
+      }
+      
       console.log(`Bulk assigned ${selectedLeads.length} leads to ${bulkAssignTo}`)
       setSelectedLeads([])
       setBulkAssignTo("")
