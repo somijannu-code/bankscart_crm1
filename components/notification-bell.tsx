@@ -13,41 +13,15 @@ import { formatDistanceToNow } from "date-fns";
 
 interface Notification {
   id: string;
+  user_id: string;
   type: string;
   title: string;
   message: string;
   read: boolean;
-  created_at: string;
   follow_up_id?: string;
   lead_id?: string;
-}
-
-interface NotificationPayload {
-  new: {
-    id: string;
-    type: string;
-    title: string;
-    message: string;
-    read: boolean;
-    created_at: string;
-    data?: {
-      follow_up_id?: string;
-      lead_id?: string;
-    };
-  };
-}
-
-interface NotificationData {
-  id: string;
-  type: string;
-  title: string;
-  message: string;
-  read: boolean;
   created_at: string;
-  data?: {
-    follow_up_id?: string;
-    lead_id?: string;
-  };
+  updated_at: string;
 }
 
 export function NotificationBell() {
@@ -57,7 +31,6 @@ export function NotificationBell() {
   const supabase = createClient();
 
   useEffect(() => {
-    // Get current user ID
     const getUser = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -66,18 +39,16 @@ export function NotificationBell() {
         console.error("Error getting user:", error);
       }
     };
-    
     getUser();
   }, []);
 
   useEffect(() => {
     if (!userId) return;
 
-    // Fetch notifications from database
     const fetchNotifications = async () => {
       try {
         const { data, error } = await supabase
-          .from("notification_history")
+          .from("notifications")
           .select("*")
           .eq("user_id", userId)
           .order("created_at", { ascending: false })
@@ -88,19 +59,8 @@ export function NotificationBell() {
           return;
         }
 
-        const formattedNotifications: Notification[] = (data || []).map((notification: NotificationData) => ({
-          id: notification.id,
-          type: notification.type,
-          title: notification.title,
-          message: notification.message,
-          read: notification.read,
-          created_at: notification.created_at,
-          follow_up_id: notification.data?.follow_up_id,
-          lead_id: notification.data?.lead_id,
-        }));
-
-        setNotifications(formattedNotifications);
-        setUnreadCount(formattedNotifications.filter(n => !n.read).length);
+        setNotifications(data || []);
+        setUnreadCount((data || []).filter((n: any) => !n.read).length);
       } catch (error) {
         console.error("Error in fetchNotifications:", error);
       }
@@ -108,31 +68,19 @@ export function NotificationBell() {
 
     fetchNotifications();
 
-    // Set up real-time subscription for new notifications
+    // Real-time subscription for new notifications
     const channel = supabase
       .channel('notifications')
       .on('postgres_changes', 
         { 
           event: 'INSERT', 
           schema: 'public', 
-          table: 'notification_history',
+          table: 'notifications',
           filter: `user_id=eq.${userId}`
         }, 
-        (payload: NotificationPayload) => {
+        (payload: any) => {
           try {
-            // Handle new notification
-            const newNotification: Notification = {
-              id: payload.new.id,
-              type: payload.new.type,
-              title: payload.new.title,
-              message: payload.new.message,
-              read: payload.new.read,
-              created_at: payload.new.created_at,
-              follow_up_id: payload.new.data?.follow_up_id,
-              lead_id: payload.new.data?.lead_id,
-            };
-            
-            setNotifications(prev => [newNotification, ...prev]);
+            setNotifications(prev => [payload.new, ...prev]);
             setUnreadCount(prev => prev + 1);
           } catch (error) {
             console.error("Error handling new notification:", error);
@@ -142,19 +90,15 @@ export function NotificationBell() {
       .subscribe();
 
     return () => {
-      try {
-        supabase.removeChannel(channel);
-      } catch (error) {
-        console.error("Error removing channel:", error);
-      }
+      supabase.removeChannel(channel);
     };
   }, [supabase, userId]);
 
   const markAsRead = async (id: string) => {
     try {
       const { error } = await supabase
-        .from("notification_history")
-        .update({ read: true, read_at: new Date().toISOString() })
+        .from("notifications")
+        .update({ read: true, updated_at: new Date().toISOString() })
         .eq("id", id);
 
       if (error) {
@@ -174,8 +118,8 @@ export function NotificationBell() {
   const markAllAsRead = async () => {
     try {
       const { error } = await supabase
-        .from("notification_history")
-        .update({ read: true, read_at: new Date().toISOString() })
+        .from("notifications")
+        .update({ read: true, updated_at: new Date().toISOString() })
         .eq("user_id", userId)
         .eq("read", false);
 
