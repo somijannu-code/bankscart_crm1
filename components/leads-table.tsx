@@ -245,6 +245,17 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
 
       if (error) throw error
 
+      if (telecallerId !== "unassigned") {
+        await supabase.from("notifications").insert({
+          user_id: telecallerId,
+          type: "lead_assignment",
+          title: "New Lead Assigned",
+          message: "A new lead has been assigned to you.",
+          lead_id: leadId,
+          read: false,
+        });
+      }
+      
       console.log(`Lead ${leadId} assigned to ${telecallerId}`)
       window.location.reload()
       
@@ -322,7 +333,19 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       if (errors.length > 0) {
         throw new Error(`Failed to assign ${errors.length} leads`)
       }
-
+      
+      if (telecallerIds.length > 0) {
+      const notifications = selectedLeads.map((leadId, index) => ({
+          user_id: telecallerIds[index % telecallerIds.length],
+          type: "lead_assignment",
+          title: "New Lead Assigned",
+          message: "A new lead has been assigned to you.",
+          lead_id: leadId,
+          read: false,
+        }));
+        await supabase.from("notifications").insert(notifications);
+      }
+    
       console.log(`Bulk assigned ${selectedLeads.length} leads`)
       setSelectedLeads([])
       setBulkAssignTo("")
@@ -796,38 +819,62 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                             <DropdownMenuItem>
                               <User className="mr-2 h-4 w-4" />
                               Assign To
-                            </DropdownMenuItem>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleAssignLead(lead.id, "unassigned")}>
-                              Unassign
-                            </DropdownMenuItem>
-                            {telecallers.map((telecaller) => (
-                              <DropdownMenuItem 
-                                key={telecaller.id} 
-                                onClick={() => handleAssignLead(lead.id, telecaller.id)}
-                              >
-                                <div className="flex items-center gap-2">
-                                  {/* Status indicator for telecaller */}
-                                  {telecallerStatus[telecaller.id] !== undefined && (
-                                    <div className={`w-2 h-2 rounded-full ${telecallerStatus[telecaller.id] ? 'bg-green-500' : 'bg-red-500'}`} 
-                                         title={telecallerStatus[telecaller.id] ? 'Checked in' : 'Not checked in'} />
-                                  )}
-                                  {telecaller.full_name}
-                                </div>
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                )}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+                            <DropdownMenuSub label="Assign To">
+  <DropdownMenuSubContent className="w-56">
+    <DropdownMenuCheckboxItem
+      checked={!lead.telecaller_id}
+      onCheckedChange={(checked) => {
+        if (checked) {
+          handleAssign(lead.id, null) // unassign
+        }
+      }}
+    >
+      Unassign
+    </DropdownMenuCheckboxItem>
+
+    {telecallers.map((telecaller) => (
+      <DropdownMenuCheckboxItem
+        key={telecaller.id}
+        checked={lead.telecaller_id?.split(",").includes(telecaller.id)}
+        onCheckedChange={(checked) => {
+          let newAssignees = lead.telecaller_id
+            ? lead.telecaller_id.split(",")
+            : []
+
+          if (checked) {
+            if (!newAssignees.includes(telecaller.id)) {
+              newAssignees.push(telecaller.id)
+            }
+          } else {
+            newAssignees = newAssignees.filter((id) => id !== telecaller.id)
+          }
+
+          handleAssign(lead.id, newAssignees.join(","))
+        }}
+      >
+        <div className="flex items-center gap-2">
+          {/* Status indicator */}
+          {telecallerStatus[telecaller.id] !== undefined && (
+            <div
+              className={`w-2 h-2 rounded-full ${
+                telecallerStatus[telecaller.id]
+                  ? "bg-green-500"
+                  : "bg-red-500"
+              }`}
+              title={
+                telecallerStatus[telecaller.id]
+                  ? "Checked in"
+                  : "Not checked in"
+              }
+            />
+          )}
+          {telecaller.full_name}
+        </div>
+      </DropdownMenuCheckboxItem>
+    ))}
+  </DropdownMenuSubContent>
+</DropdownMenuSub>
+
 
       {/* Pagination Controls */}
       {totalPages > 1 && (
