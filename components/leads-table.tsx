@@ -24,7 +24,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useTelecallerStatus } from "@/hooks/use-telecaller-status"
-import { MultiSelect } from "@/components/ui/multi-select"; // CHANGE 1: Import the new MultiSelect component
+// IMPORTANT: You need to import a multi-select component here.
+// Example: import { MultiSelect } from "@/components/ui/multi-select"; 
 
 interface Lead {
   id: string
@@ -79,7 +80,11 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [selectedLeads, setSelectedLeads] = useState<string[]>([])
-  const [bulkAssignTo, setBulkAssignTo] = useState<string[]>([]) // CHANGE 2: Change state to an array of strings
+  
+  // --- CHANGE 1: Update state to hold an array of strings ---
+  const [bulkAssignTo, setBulkAssignTo] = useState<string[]>([])
+  // ---------------------------------------------------------
+  
   const [bulkStatus, setBulkStatus] = useState<string>("")
   const supabase = createClient()
 
@@ -270,18 +275,20 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     }
   }
 
+  // --- CHANGE 2: Update handleBulkAssign to work with an array of IDs ---
   const handleBulkAssign = async () => {
-    if (bulkAssignTo.length === 0 || selectedLeads.length === 0) return // CHANGE 3: Check for empty array
+    // Check if any telecallers or leads are selected
+    if (bulkAssignTo.length === 0 || selectedLeads.length === 0) return
 
     try {
-      // Get the current user ID once, outside the loop
+      // Get the current user ID once
       const { data: { user } } = await supabase.auth.getUser()
       const assignedById = user?.id
 
-      // Distribute leads equally among selected telecallers
       const updates: any[] = []
-      const telecallerIds = bulkAssignTo; // bulkAssignTo is already an array from MultiSelect component
+      const telecallerIds = bulkAssignTo; // bulkAssignTo is already an array
 
+      // Distribute leads equally among telecallers using round-robin
       selectedLeads.forEach((leadId, index) => {
           const telecallerId = telecallerIds[index % telecallerIds.length];
           updates.push({
@@ -313,13 +320,14 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
 
       console.log(`Bulk assigned ${selectedLeads.length} leads`)
       setSelectedLeads([])
-      setBulkAssignTo([]) // CHANGE 4: Reset state to an empty array
+      setBulkAssignTo([]) // Reset state to an empty array
       window.location.reload()
       
     } catch (error) {
       console.error("Error bulk assigning leads:", error)
     }
   }
+  // ----------------------------------------------------------------------
 
   const handleBulkStatusUpdate = async () => {
     if (!bulkStatus || selectedLeads.length === 0) return
@@ -542,19 +550,26 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
               Update Status
             </Button>
             
-            {/* CHANGE 5: Replace the single-select component with the new MultiSelect component */}
-            <MultiSelect 
-              className="w-48"
-              options={telecallers.map(t => ({ value: t.id, label: t.full_name }))}
-              value={bulkAssignTo}
-              onValueChange={setBulkAssignTo}
-              placeholder="Assign to..."
-            />
-            {/* End of CHANGE 5 */}
-            
+            {/* --- CHANGE 3: Replace the single-select Assign component with a multi-select component --- */}
+            <div className="w-48">
+                {/* You will need to import or create a MultiSelect component.
+                For example, using a library like react-select or a custom component.
+                Make sure you also import it at the top of the file. 
+                
+                <MultiSelect
+                    options={telecallers.map(t => ({ label: t.full_name, value: t.id }))}
+                    onValueChange={(selectedValues) => setBulkAssignTo(selectedValues)}
+                    value={bulkAssignTo}
+                    placeholder="Assign to..."
+                /> 
+                */}
+                <span className="text-gray-500 italic">Multi-select component goes here</span>
+            </div>
+            {/* ----------------------------------------------------------------------------------------- */}
+
             <Button 
               onClick={handleBulkAssign}
-              disabled={bulkAssignTo.length === 0} // CHANGE 6: Disable if no assignees are selected
+              disabled={bulkAssignTo.length === 0} // Disable if no assignees are selected
               size="sm"
             >
               Assign
