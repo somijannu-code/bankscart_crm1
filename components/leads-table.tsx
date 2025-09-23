@@ -24,6 +24,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useTelecallerStatus } from "@/hooks/use-telecaller-status"
+// IMPORTANT: You need to import a multi-select component.
+// This is a conceptual import. You'll need to install and import a suitable library
+// like 'react-select', 'shadcn-multi-select' or create your own component.
+// import { MultiSelect } from "@/components/ui/multi-select"; 
 
 interface Lead {
   id: string
@@ -78,7 +82,9 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [selectedLeads, setSelectedLeads] = useState<string[]>([])
-  const [bulkAssignTo, setBulkAssignTo] = useState<string>("")
+  // --- CHANGE 1: Update state to hold an array of strings ---
+  const [bulkAssignTo, setBulkAssignTo] = useState<string[]>([])
+  // -----------------------------------------------------------
   const [bulkStatus, setBulkStatus] = useState<string>("")
   const supabase = createClient()
 
@@ -269,56 +275,59 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     }
   }
 
+  // --- CHANGE 2: Update handleBulkAssign to work with an array of IDs ---
   const handleBulkAssign = async () => {
-    // bulkAssignTo is now an array of strings from the MultiSelect component
-    if (bulkAssignTo.length === 0 || selectedLeads.length === 0) return;
+    // Check if any telecallers or leads are selected
+    if (bulkAssignTo.length === 0 || selectedLeads.length === 0) return
 
     try {
-        const { data: { user } } = await supabase.auth.getUser();
-        const assignedById = user?.id;
+      // Get the current user ID once
+      const { data: { user } } = await supabase.auth.getUser()
+      const assignedById = user?.id
 
-        const updates: any[] = [];
-        const telecallerIds = bulkAssignTo;
-        
-        // Distribute leads equally among telecallers using round-robin
-        selectedLeads.forEach((leadId, index) => {
-            const telecallerId = telecallerIds[index % telecallerIds.length];
-            updates.push({
-                id: leadId,
-                assigned_to: telecallerId,
-                assigned_by: assignedById,
-                assigned_at: new Date().toISOString()
-            });
-        });
+      const updates: any[] = []
+      const telecallerIds = bulkAssignTo; // bulkAssignTo is already an array
 
-        // Execute all updates
-        const results = await Promise.all(
-            updates.map(update =>
-                supabase
-                    .from("leads")
-                    .update({
-                        assigned_to: update.assigned_to,
-                        assigned_by: update.assigned_by,
-                        assigned_at: update.assigned_at
-                    })
-                    .eq("id", update.id)
-            )
-        );
+      // Distribute leads equally among telecallers using round-robin
+      selectedLeads.forEach((leadId, index) => {
+          const telecallerId = telecallerIds[index % telecallerIds.length];
+          updates.push({
+              id: leadId,
+              assigned_to: telecallerId,
+              assigned_by: assignedById,
+              assigned_at: new Date().toISOString()
+          });
+      });
 
-        const errors = results.filter(result => result.error);
-        if (errors.length > 0) {
-            throw new Error(`Failed to assign ${errors.length} leads`);
-        }
+      // Execute all updates concurrently
+      const results = await Promise.all(
+          updates.map(update => 
+              supabase
+                  .from("leads")
+                  .update({
+                      assigned_to: update.assigned_to,
+                      assigned_by: update.assigned_by,
+                      assigned_at: update.assigned_at
+                  })
+                  .eq("id", update.id)
+          )
+      );
+      
+      const errors = results.filter(result => result.error)
+      if (errors.length > 0) {
+          throw new Error(`Failed to assign ${errors.length} leads`)
+      }
 
-        console.log(`Bulk assigned ${selectedLeads.length} leads`);
-        setSelectedLeads([]);
-        setBulkAssignTo([]); // Reset state to an empty array
-        window.location.reload();
-
+      console.log(`Bulk assigned ${selectedLeads.length} leads`)
+      setSelectedLeads([])
+      setBulkAssignTo([]) // Reset state to an empty array
+      window.location.reload()
+      
     } catch (error) {
-        console.error("Error bulk assigning leads:", error);
+      console.error("Error bulk assigning leads:", error)
     }
-};
+  }
+  // ----------------------------------------------------------------------
 
   const handleBulkStatusUpdate = async () => {
     if (!bulkStatus || selectedLeads.length === 0) return
@@ -541,14 +550,16 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
               Update Status
             </Button>
             
-            {/* Bulk Assignment */}
-           <MultiSelect
-             options={telecallers.map(t => ({ label: t.name, value: t.id }))}
-             onValueChange={(selectedValues) => setBulkAssignTo(selectedValues)}
-             value={bulkAssignTo}
-              placeholder="Select telecallers"
-            />
-                      {/* Status indicator for telecaller */}
+            {/* --- CHANGE 3: Replace the single-select Assign component with a multi-select component --- */}
+            {/* <Select value={bulkAssignTo} onValueChange={setBulkAssignTo}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Assign to..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unassigned">Unassign</SelectItem>
+                {telecallers.map((telecaller) => (
+                  <SelectItem key={telecaller.id} value={telecaller.id}>
+                    <div className="flex items-center gap-2">
                       {telecallerStatus[telecaller.id] !== undefined && (
                         <div className={`w-2 h-2 rounded-full ${telecallerStatus[telecaller.id] ? 'bg-green-500' : 'bg-red-500'}`} 
                              title={telecallerStatus[telecaller.id] ? 'Checked in' : 'Not checked in'} />
@@ -558,11 +569,24 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                   </SelectItem>
                 ))}
               </SelectContent>
-            </Select>
+            </Select> */}
             
+            {/* This is a conceptual multi-select component. You will need to import or create it. */}
+            {/* This new component will automatically handle the selection of multiple IDs in an array. */}
+            <div className="w-48">
+              {/* <MultiSelect
+                options={telecallers.map(t => ({ label: t.full_name, value: t.id }))}
+                onValueChange={(selectedValues) => setBulkAssignTo(selectedValues)}
+                value={bulkAssignTo}
+                placeholder="Assign to..."
+                // Assuming your component supports these props
+              /> */}
+            </div>
+            {/* ----------------------------------------------------------------------------------------- */}
+
             <Button 
               onClick={handleBulkAssign}
-              disabled={!bulkAssignTo}
+              disabled={bulkAssignTo.length === 0} // Disable if no assignees are selected
               size="sm"
             >
               Assign
