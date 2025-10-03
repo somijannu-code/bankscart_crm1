@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+// 🛑 CRITICAL FIX: Add useCallback to imports
+import { useState, useEffect, useCallback } from "react";
 import { format, startOfMonth, endOfMonth, subMonths, addMonths, parseISO, differenceInDays } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -50,7 +51,7 @@ import {
   Pie,
   Cell
 } from "recharts";
-import { enhancedAttendanceService } from "@/lib/attendance-service-enhanced";
+// import { enhancedAttendanceService } from "@/lib/attendance-service-enhanced"; // Assuming this is not required for data fetching
 
 export function AttendanceReports() {
   const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>({
@@ -67,113 +68,9 @@ export function AttendanceReports() {
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const supabase = createClient();
 
-  useEffect(() => {
-    loadData();
-    
-    // Set up real-time subscription for attendance changes
-    const attendanceChannel = supabase
-      .channel('attendance-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'attendance',
-        },
-        (payload: { new: any }) => {
-          console.log('New attendance record:', payload.new);
-          loadData(); // Reload data when new attendance record is added
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'attendance',
-        },
-        (payload: { new: any }) => {
-          console.log('Attendance record updated:', payload.new);
-          loadData(); // Reload data when attendance record is updated
-        }
-      )
-      .subscribe();
-      
-    // Set up real-time subscription for user changes (salary updates)
-    const usersChannel = supabase
-      .channel('users-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'users',
-        },
-        (payload: { new: any }) => {
-          console.log('User record updated:', payload.new);
-          loadData(); // Reload data when user record is updated
-        }
-      )
-      .subscribe();
-
-    // Clean up subscriptions
-    return () => {
-      supabase.removeChannel(attendanceChannel);
-      supabase.removeChannel(usersChannel);
-    };
-  }, [dateRange, departmentFilter]);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      // Fetch users
-      let userQuery = supabase
-        .from("users")
-        .select("*")
-        .eq("is_active", true)
-        .order("full_name");
-
-      // Apply department filter if not "all"
-      if (departmentFilter !== "all") {
-        userQuery = userQuery.eq("department", departmentFilter);
-      }
-
-      const { data: usersData, error: usersError } = await userQuery;
-
-      if (usersError) throw usersError;
-      setUsers(usersData || []);
-
-      // Fetch attendance data
-      const { data: attendanceData, error: attendanceError } = await supabase
-        .from("attendance")
-        .select(`
-          *,
-          user:users!attendance_user_id_fkey(full_name, email, role, department)
-        `)
-        .gte("date", format(dateRange.start, "yyyy-MM-dd"))
-        .lte("date", format(dateRange.end, "yyyy-MM-dd"))
-        .order("date", { ascending: false });
-
-      if (attendanceError) throw attendanceError;
-      setAttendanceData(attendanceData || []);
-
-      // Prepare chart data
-      prepareChartData(attendanceData || []);
-      
-      // Prepare trend data
-      prepareTrendData(attendanceData || []);
-      
-      // Prepare payroll data
-      preparePayrollData(attendanceData || [], usersData || []);
-    } catch (error) {
-      console.error("Error loading data:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const prepareChartData = (data: any[]) => {
-    // Group data by date for attendance trends
+  // 1. ⭐️ FIX: Wrap prepare functions in useCallback to ensure they are stable dependencies
+  //    (Setters like setChartData are stable, but must be listed as dependencies)
+  const prepareChartData = useCallback((data: any[]) => {
     const groupedByDate: Record<string, { present: number; absent: number; late: number }> = {};
     
     data.forEach(record => {
@@ -195,7 +92,6 @@ export function AttendanceReports() {
       }
     });
     
-    // Convert to array format for chart
     const chartData = Object.entries(groupedByDate).map(([date, counts]) => ({
       date: format(new Date(date), "MMM dd"),
       Present: counts.present,
@@ -204,14 +100,12 @@ export function AttendanceReports() {
     }));
     
     setChartData(chartData);
-  };
+  }, [setChartData]);
 
-  const prepareTrendData = (data: any[]) => {
-    // Calculate punctuality trends
+  const prepareTrendData = useCallback((data: any[]) => {
     const punctualityData: any[] = [];
     const absenteeismData: any[] = [];
     
-    // Group by week
     const weeks: Record<string, { present: number; late: number; absent: number; total: number }> = {};
     
     data.forEach(record => {
@@ -265,96 +159,190 @@ export function AttendanceReports() {
     });
     
     setTrendData([{ punctuality: punctualityData, absenteeism: absenteeismData }]);
-  };
+  }, [setTrendData]);
 
-  const preparePayrollData = (attendanceData: any[], usersData: any[]) => {
-  const workingDays = 26; // configurable
-  const overtimeRate = 200; // ₹200 per hour
+  const preparePayrollData = useCallback((attendanceData: any[], usersData: any[]) => {
+    const workingDays = 26; // configurable
+    const overtimeRate = 200; // ₹200 per hour
 
-  const payrollMap: Record<string, any> = {};
+    const payrollMap: Record<string, any> = {};
 
-  // Initialize payroll data for all users
-  usersData.forEach(user => {
-    payrollMap[user.id] = {
-      userId: user.id,
-      name: user.full_name,
-      department: user.department || 'N/A',
-      presentDays: 0,
-      lateDays: 0,
-      absentDays: 0,
-      totalHours: 0,
-      overtimeHours: 0,
-      baseSalary: user.base_salary || 25000, // ✅ from DB
-      overtimeRate: user.overtime_rate || overtimeRate,
-      totalPay: 0,
-      editingBase: false,
-      editingOvertime: false
-    };
-  });
-
-  // Process attendance data
-  attendanceData.forEach(record => {
-    const emp = payrollMap[record.user_id];
-    if (!emp) return;
-
-    switch (record.status) {
-      case 'present':
-        emp.presentDays++;
-        break;
-      case 'late':
-        emp.lateDays++;
-        emp.presentDays++;
-        break;
-      case 'absent':
-        emp.absentDays++;
-        break;
-    }
-
-    if (record.total_hours) {
-      const [hours, minutes] = record.total_hours.split(':').map(Number);
-      emp.totalHours += hours + minutes / 60;
-    }
-
-    if (record.overtime_hours) {
-      const [hours, minutes] = record.overtime_hours.split(':').map(Number);
-      emp.overtimeHours += hours + minutes / 60;
-    }
-  });
-
-  // Final salary calculation
-  Object.values(payrollMap).forEach(emp => {
-    const perDaySalary = emp.baseSalary / workingDays;
-    const absentDeduction = emp.absentDays * perDaySalary;
-    const overtimePay = emp.overtimeHours * emp.overtimeRate;
-
-    emp.totalPay = emp.baseSalary - absentDeduction + overtimePay;
-  });
-
-  setPayrollData(Object.values(payrollMap));
-};
-
-  const exportReport = async (format: 'csv' | 'excel' | 'pdf') => {
-    try {
-      // In a real implementation, this would generate and download the report
-      console.log(`Exporting report in ${format} format`);
-      
-      // For demo purposes, we'll just show an alert
-      alert(`Exporting report in ${format.toUpperCase()} format. In a real application, this would download the file.`);
-    } catch (error) {
-      console.error("Export failed:", error);
-    }
-  };
-
-  const navigateDateRange = (direction: 'prev' | 'next') => {
-    const newStart = direction === 'prev' 
-      ? subMonths(dateRange.start, 1)
-      : addMonths(dateRange.start, 1);
-    
-    setDateRange({
-      start: startOfMonth(newStart),
-      end: endOfMonth(newStart)
+    // Initialize payroll data for all users
+    usersData.forEach(user => {
+      payrollMap[user.id] = {
+        userId: user.id,
+        name: user.full_name,
+        department: user.department || 'N/A',
+        presentDays: 0,
+        lateDays: 0,
+        absentDays: 0,
+        totalHours: 0,
+        overtimeHours: 0,
+        baseSalary: user.base_salary || 25000,
+        overtimeRate: user.overtime_rate || overtimeRate,
+        totalPay: 0,
+        editingBase: false,
+        editingOvertime: false
+      };
     });
-  };
+
+    // Process attendance data
+    attendanceData.forEach(record => {
+      const emp = payrollMap[record.user_id];
+      if (!emp) return;
+
+      switch (record.status) {
+        case 'present':
+          emp.presentDays++;
+          break;
+        case 'late':
+          emp.lateDays++;
+          emp.presentDays++;
+          break;
+        case 'absent':
+          emp.absentDays++;
+          break;
+      }
+
+      if (record.total_hours) {
+        const [hours, minutes] = record.total_hours.split(':').map(Number);
+        emp.totalHours += hours + minutes / 60;
+      }
+
+      if (record.overtime_hours) {
+        const [hours, minutes] = record.overtime_hours.split(':').map(Number);
+        emp.overtimeHours += hours + minutes / 60;
+      }
+    });
+
+    // Final salary calculation
+    Object.values(payrollMap).forEach(emp => {
+      const perDaySalary = emp.baseSalary / workingDays;
+      const absentDeduction = emp.absentDays * perDaySalary;
+      const overtimePay = emp.overtimeHours * emp.overtimeRate;
+
+      emp.totalPay = emp.baseSalary - absentDeduction + overtimePay;
+    });
+
+    setPayrollData(Object.values(payrollMap));
+  }, [setPayrollData]);
+
+  // 2. ⭐️ FIX: Wrap loadData in useCallback to ensure its reference is stable.
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      // Fetch users
+      let userQuery = supabase
+        .from("users")
+        .select("*")
+        .eq("is_active", true)
+        .order("full_name");
+
+      // Apply department filter if not "all"
+      if (departmentFilter !== "all") {
+        userQuery = userQuery.eq("department", departmentFilter);
+      }
+
+      const { data: usersData, error: usersError } = await userQuery;
+
+      if (usersError) throw usersError;
+      setUsers(usersData || []);
+
+      // Fetch attendance data
+      const { data: attendanceData, error: attendanceError } = await supabase
+        .from("attendance")
+        .select(`
+          *,
+          user:users!attendance_user_id_fkey(full_name, email, role, department)
+        `)
+        .gte("date", format(dateRange.start, "yyyy-MM-dd"))
+        .lte("date", format(dateRange.end, "yyyy-MM-dd"))
+        .order("date", { ascending: false });
+
+      if (attendanceError) throw attendanceError;
+      setAttendanceData(attendanceData || []);
+
+      // Prepare chart data using stable helper functions
+      prepareChartData(attendanceData || []);
+      prepareTrendData(attendanceData || []);
+      preparePayrollData(attendanceData || [], usersData || []);
+    } catch (error) {
+      console.error("Error loading data:", error);
+    } finally {
+      setLoading(false);
+    }
+  // 🔑 CRITICAL DEPENDENCY ARRAY for loadData: Only dependent on filter changes, 
+  // stable helpers, and stable setters. This is the key to preventing the loop.
+  }, [
+    dateRange, 
+    departmentFilter, 
+    supabase, 
+    setUsers, 
+    setAttendanceData, 
+    prepareChartData, 
+    prepareTrendData, 
+    preparePayrollData
+  ]);
+
+  // 3. ⭐️ FIX: The useEffect now uses the stable loadData reference.
+  useEffect(() => {
+    // 1. Initial/Filter-triggered load
+    loadData();
+    
+    // 2. Set up real-time subscription for attendance changes
+    const attendanceChannel = supabase
+      .channel('attendance-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'attendance',
+        },
+        (payload: { new: any }) => {
+          console.log('New attendance record:', payload.new);
+          loadData(); // Calls the stable loadData
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'attendance',
+        },
+        (payload: { new: any }) => {
+          console.log('Attendance record updated:', payload.new);
+          loadData(); // Calls the stable loadData
+        }
+      )
+      .subscribe();
+      
+    // 3. Set up real-time subscription for user changes
+    const usersChannel = supabase
+      .channel('users-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'users',
+        },
+        (payload: { new: any }) => {
+          console.log('User record updated:', payload.new);
+          loadData(); // Calls the stable loadData
+        }
+      )
+      .subscribe();
+
+    // 4. Clean up subscriptions
+    return () => {
+      supabase.removeChannel(attendanceChannel);
+      supabase.removeChannel(usersChannel);
+    };
+  // The effect now runs when its filters or the stable loadData function changes.
+  // loadData only changes when dateRange or departmentFilter change. No loop!
+  }, [dateRange, departmentFilter, loadData, supabase]); 
 
   const calculateSummaryStats = () => {
     const totalEmployees = users.length;
@@ -389,6 +377,29 @@ export function AttendanceReports() {
       attendanceRate,
       punctualityRate
     };
+  };
+
+  const exportReport = async (format: 'csv' | 'excel' | 'pdf') => {
+    try {
+      // In a real implementation, this would generate and download the report
+      console.log(`Exporting report in ${format} format`);
+      
+      // For demo purposes, we'll just show an alert
+      alert(`Exporting report in ${format.toUpperCase()} format. In a real application, this would download the file.`);
+    } catch (error) {
+      console.error("Export failed:", error);
+    }
+  };
+
+  const navigateDateRange = (direction: 'prev' | 'next') => {
+    const newStart = direction === 'prev' 
+      ? subMonths(dateRange.start, 1)
+      : addMonths(dateRange.start, 1);
+    
+    setDateRange({
+      start: startOfMonth(newStart),
+      end: endOfMonth(newStart)
+    });
   };
 
   const stats = calculateSummaryStats();
@@ -804,6 +815,7 @@ export function AttendanceReports() {
                       value={employee.baseSalary}
                       onChange={(e) => {
                         const newVal = Number(e.target.value);
+                        // Safe state update
                         setPayrollData(prev =>
                           prev.map(emp =>
                             emp.userId === employee.userId ? { ...emp, baseSalary: newVal } : emp
@@ -825,6 +837,7 @@ export function AttendanceReports() {
                       value={employee.overtimeRate}
                       onChange={(e) => {
                         const newVal = Number(e.target.value);
+                        // Safe state update
                         setPayrollData(prev =>
                           prev.map(emp =>
                             emp.userId === employee.userId ? { ...emp, overtimeRate: newVal } : emp
