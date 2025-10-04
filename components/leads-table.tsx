@@ -94,7 +94,8 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     ...telecallers.map(t => t.id)
   ].filter((id, index, self) => self.indexOf(id) === index) // Remove duplicates
 
-  const { telecallerStatus, loading: statusLoading } = useTelecallerStatus(allTelecallerIds)
+  // NOTE: Keeping the hook call but the usage is removed in the UI
+  const { telecallerStatus, loading: statusLoading } = useTelecallerStatus(allTelecallerIds) 
 
   // Add safe value getters
   const getSafeValue = (value: any, defaultValue: string = 'N/A') => {
@@ -478,11 +479,11 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
               {telecallers.map((telecaller) => (
                 <SelectItem key={telecaller.id} value={telecaller.id}>
                   <div className="flex items-center gap-2">
-                    {/* Status indicator for telecaller */}
-                    {telecallerStatus[telecaller.id] !== undefined && (
+                    {/* Status indicator for telecaller - REMOVED */}
+                    {/* {telecallerStatus[telecaller.id] !== undefined && (
                       <div className={`w-2 h-2 rounded-full ${telecallerStatus[telecaller.id] ? 'bg-green-500' : 'bg-red-500'}`} 
                            title={telecallerStatus[telecaller.id] ? 'Checked in' : 'Not checked in'} />
-                    )}
+                    )} */}
                     {telecaller.full_name}
                   </div>
                 </SelectItem>
@@ -729,11 +730,11 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                   <TableCell>
                     {lead.assigned_user ? (
                       <div className="flex items-center gap-2">
-                        {/* Status indicator for assigned telecaller */}
-                        {telecallerStatus[lead.assigned_user.id] !== undefined && (
+                        {/* Status indicator for assigned telecaller - REMOVED */}
+                        {/* {telecallerStatus[lead.assigned_user.id] !== undefined && (
                           <div className={`w-2 h-2 rounded-full ${telecallerStatus[lead.assigned_user.id] ? 'bg-green-500' : 'bg-red-500'}`} 
                                title={telecallerStatus[lead.assigned_user.id] ? 'Checked in' : 'Not checked in'} />
-                        )}
+                        )} */}
                         {lead.assigned_user.full_name}
                       </div>
                     ) : (
@@ -799,11 +800,11 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                                 onClick={() => handleAssignLead(lead.id, telecaller.id)}
                               >
                                 <div className="flex items-center gap-2">
-                                  {/* Status indicator for telecaller */}
-                                  {telecallerStatus[telecaller.id] !== undefined && (
+                                  {/* Status indicator for telecaller - REMOVED */}
+                                  {/* {telecallerStatus[telecaller.id] !== undefined && (
                                     <div className={`w-2 h-2 rounded-full ${telecallerStatus[telecaller.id] ? 'bg-green-500' : 'bg-red-500'}`} 
                                          title={telecallerStatus[telecaller.id] ? 'Checked in' : 'Not checked in'} />
-                                  )}
+                                  )} */}
                                   {telecaller.full_name}
                                 </div>
                               </DropdownMenuItem>
