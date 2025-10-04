@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { CalendarIcon, X, Phone, Clock, MessageSquare } from "lucide-react"
+import { CalendarIcon, X, Phone, Clock, MessageSquare, DollarSign } from "lucide-react" // Added DollarSign
 import { format } from "date-fns"
 import { cn } from "@/lib/utils"
 import { useCallTracking } from "@/context/call-tracking-context"
@@ -23,6 +23,7 @@ interface LeadStatusUpdaterProps {
   onStatusUpdate?: (newStatus: string, note?: string, callbackDate?: string) => void
   isCallInitiated?: boolean // New prop to indicate if this is for a call
   onCallLogged?: (callLogId: string) => void // New prop to notify when call is logged
+  initialLoanAmount?: number | null // New prop for initial loan amount
 }
 
 const statusOptions = [
@@ -44,7 +45,8 @@ export function LeadStatusUpdater({
   currentStatus, 
   onStatusUpdate,
   isCallInitiated = false,
-  onCallLogged
+  onCallLogged,
+  initialLoanAmount = null, // Destructure new prop
 }: LeadStatusUpdaterProps) {
   const [status, setStatus] = useState(currentStatus)
   const [isUpdating, setIsUpdating] = useState(false)
@@ -53,6 +55,9 @@ export function LeadStatusUpdater({
   const [callbackDate, setCallbackDate] = useState<Date>()
   const [callNotes, setCallNotes] = useState("") // New state for call notes
   const [callDuration, setCallDuration] = useState(0) // New state for call duration
+  // New state for Loan Amount
+  const [loanAmount, setLoanAmount] = useState<number | null>(initialLoanAmount)
+
   const supabase = createClient()
   const { activeCall, startCall, endCall, updateCallDuration, formatDuration } = useCallTracking()
 
@@ -63,12 +68,23 @@ export function LeadStatusUpdater({
     }
   }, [isCallInitiated])
 
+  // Update loan amount if the initial prop changes (e.g., parent fetches new data)
+  useEffect(() => {
+    setLoanAmount(initialLoanAmount)
+  }, [initialLoanAmount])
+
+
   const handleStatusUpdate = async () => {
     setIsUpdating(true)
     try {
       const updateData: any = { 
         status: status,
         last_contacted: new Date().toISOString()
+      }
+      
+      // Add loan_amount to update data if it's a valid number
+      if (loanAmount !== null && !isNaN(loanAmount) && loanAmount >= 0) {
+        updateData.loan_amount = loanAmount
       }
 
       // Add general remarks/notes if provided
@@ -100,7 +116,7 @@ export function LeadStatusUpdater({
 
       onStatusUpdate?.(status, note, callbackDate?.toISOString())
       
-      // Reset form
+      // Reset form (keep loanAmount unless you want it reset)
       setNote("")
       setRemarks("")
       setCallbackDate(undefined)
@@ -181,7 +197,8 @@ export function LeadStatusUpdater({
           {isCallInitiated ? "Log Call & Update Status" : "Lead Status"}
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      {/* Added 'max-h-[80vh] overflow-y-auto' to CardContent to make it scrollable */}
+      <CardContent className="space-y-4 max-h-[80vh] overflow-y-auto">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">Current Status:</span>
           <Badge className={currentStatusOption?.color}>{currentStatusOption?.label}</Badge>
@@ -214,6 +231,24 @@ export function LeadStatusUpdater({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* New field for Loan Amount */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium flex items-center gap-2">
+              <DollarSign className="h-4 w-4" />
+              Loan Amount:
+            </label>
+            <Input
+              type="number"
+              placeholder="Enter desired loan amount (loan_amount)"
+              value={loanAmount !== null ? String(loanAmount) : ""}
+              onChange={(e) => {
+                const value = e.target.value
+                setLoanAmount(value === "" ? null : Number(value))
+              }}
+              min="0"
+            />
           </div>
 
           {/* Call notes field - only shown when call is initiated */}
@@ -311,6 +346,7 @@ export function LeadStatusUpdater({
                           const [hours, minutes] = e.target.value.split(":").map(Number)
                           const newDate = new Date(callbackDate)
                           newDate.setHours(hours, minutes)
+                          newDate.setSeconds(0) // Ensure seconds are set to 0 for consistency
                           setCallbackDate(newDate)
                         }
                       }}
