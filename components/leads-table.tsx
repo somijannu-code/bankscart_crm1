@@ -557,6 +557,41 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     setSmsBody("")
   }
 
+  // --- START: SINGLE LEAD ASSIGNMENT ---
+  const handleAssignLead = async (leadId: string, telecallerId: string | 'unassigned') => {
+    setSuccessMessage("");
+    setErrorMessage("");
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const assignedById = user?.id
+
+      const updateData = {
+        assigned_to: telecallerId === 'unassigned' ? null : telecallerId,
+        assigned_by: telecallerId === 'unassigned' ? null : assignedById,
+        assigned_at: telecallerId === 'unassigned' ? null : new Date().toISOString()
+      }
+
+      const { error } = await supabase
+        .from("leads")
+        .update(updateData)
+        .eq("id", leadId)
+      
+      if (error) throw error
+      
+      const telecallerName = telecallers.find(t => t.id === telecallerId)?.full_name || 'N/A';
+      
+      setSuccessMessage(`Lead ${leadId.substring(0, 4)} successfully ${telecallerId === 'unassigned' ? 'unassigned' : `assigned to ${telecallerName}`}.`)
+      // Reload page to reflect single assignment change, but with a slight delay
+      setTimeout(() => window.location.reload(), 1000) 
+      
+    } catch (error) {
+      console.error("Error assigning lead:", error)
+      setErrorMessage('Error assigning lead. Please check the console.')
+    }
+  }
+  // --- END: SINGLE LEAD ASSIGNMENT ---
+
   // --- START: UPDATED BULK ASSIGN (SEQUENTIAL ROUND-ROBIN) ---
   const handleBulkAssign = async () => {
     if (selectedLeads.length === 0) {
@@ -1664,6 +1699,49 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                                 <Mail className="mr-2 h-4 w-4" />
                                 Send Email
                               </DropdownMenuItem>
+                              
+                              {/* --- START: Single Lead Assignment Dropdown --- */}
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                                    <User className="mr-2 h-4 w-4" />
+                                    Assign To
+                                  </DropdownMenuItem>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent side="right">
+                                  <DropdownMenuLabel>Select Telecaller</DropdownMenuLabel>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem 
+                                    onClick={() => handleAssignLead(lead.id, 'unassigned')}
+                                    className="text-red-500 hover:!bg-red-50"
+                                  >
+                                    <X className="mr-2 h-4 w-4" />
+                                    Unassign Lead
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  {telecallers.length === 0 ? (
+                                    <DropdownMenuItem disabled>No Telecallers available</DropdownMenuItem>
+                                  ) : (
+                                    telecallers.map((telecaller) => (
+                                      <DropdownMenuItem 
+                                        key={telecaller.id} 
+                                        onClick={() => handleAssignLead(lead.id, telecaller.id)}
+                                        className="flex items-center justify-between"
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          {telecallerStatus[telecaller.id] !== undefined && (
+                                            <div className={`w-2 h-2 rounded-full ${telecallerStatus[telecaller.id] ? 'bg-green-500' : 'bg-red-500'}`} />
+                                          )}
+                                          {telecaller.full_name}
+                                        </div>
+                                        {lead.assigned_to === telecaller.id && <CheckIcon className="h-4 w-4 text-green-500" />}
+                                      </DropdownMenuItem>
+                                    ))
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                              {/* --- END: Single Lead Assignment Dropdown --- */}
+                              
                               <DropdownMenuItem onClick={() => setSelectedLeadForTags(lead)}>
                                 <Tag className="mr-2 h-4 w-4" />
                                 Manage Tags
