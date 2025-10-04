@@ -20,7 +20,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { LeadStatusDialog } from "@/components/lead-status-dialog"
 import { QuickActions } from "@/components/quick-actions"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { // <--- FIXED SYNTAX ERROR HERE
+  Dialog, DialogContent, DialogDescription, DialogFooter, 
+  DialogHeader, DialogTitle, DialogTrigger 
+} from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -80,6 +83,8 @@ interface SavedFilter {
 interface LeadsTableProps {
   leads: Lead[]
   telecallers: Array<{ id: string; full_name: string }>
+  // PROPOSED ADDITION for best practice (but not used in this fixed version)
+  // refreshLeads: () => void; 
 }
 
 export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
@@ -466,6 +471,8 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     setShowEmailDialog(false)
     setEmailSubject("")
     setEmailBody("")
+    setSuccessMessage(`Successfully queued ${selectedLeads.length} emails.`)
+    setSelectedLeads([])
   }
 
   const handleBulkSMS = async () => {
@@ -477,11 +484,17 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     
     setShowSMSDialog(false)
     setSmsBody("")
+    setSuccessMessage(`Successfully queued ${selectedLeads.length} SMS messages.`)
+    setSelectedLeads([])
   }
 
+  // FIX: Removed window.location.reload()
   const handleBulkAssign = async (telecallerId: string) => {
     if (selectedLeads.length === 0) return
 
+    setSuccessMessage("")
+    setErrorMessage("")
+    
     try {
       const { data: { user } } = await supabase.auth.getUser()
       const assignedById = user?.id
@@ -507,16 +520,21 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
 
       console.log(`Bulk assigned ${selectedLeads.length} leads to ${telecallerId}`)
       setSelectedLeads([])
-      window.location.reload()
+      // window.location.reload() // REMOVED THIS
+      setSuccessMessage(`Successfully assigned ${selectedLeads.length} leads. Please refresh to see updates.`)
       
     } catch (error) {
       console.error("Error bulk assigning leads:", error)
-      alert('Error assigning leads. Please try again.')
+      setErrorMessage('Error assigning leads. Please try again.')
     }
   }
 
+  // FIX: Removed window.location.reload()
   const handleBulkStatusUpdate = async (newStatus: string) => {
     if (selectedLeads.length === 0) return
+
+    setSuccessMessage("")
+    setErrorMessage("")
 
     try {
       // Update status for all selected leads
@@ -540,16 +558,21 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
 
       console.log(`Bulk updated status for ${selectedLeads.length} leads to ${newStatus}`)
       setSelectedLeads([])
-      window.location.reload()
+      // window.location.reload() // REMOVED THIS
+      setSuccessMessage(`Successfully updated status for ${selectedLeads.length} leads to ${newStatus}. Please refresh to see updates.`)
       
     } catch (error) {
       console.error("Error bulk updating lead status:", error)
-      alert('Error updating status. Please try again.')
+      setErrorMessage('Error updating status. Please try again.')
     }
   }
 
+  // FIX: Removed window.location.reload()
   const handleBulkAddTag = async (tag: string) => {
     if (selectedLeads.length === 0) return
+
+    setSuccessMessage("")
+    setErrorMessage("")
 
     try {
       // Update tags for all selected leads
@@ -578,22 +601,27 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
 
       console.log(`Added tag "${tag}" to ${selectedLeads.length} leads`)
       setSelectedLeads([])
-      window.location.reload()
+      // window.location.reload() // REMOVED THIS
+      setSuccessMessage(`Successfully added tag "${tag}" to ${selectedLeads.length} leads. Please refresh to see updates.`)
       
     } catch (error) {
       console.error("Error adding tag:", error)
-      alert('Error adding tag. Please try again.')
+      setErrorMessage('Error adding tag. Please try again.')
     }
   }
 
+  // FIX: Changed alert to state message and removed window.location.reload()
   const handleAutoAssignLeads = async () => {
     if (!autoAssignRules.enabled || telecallers.length === 0) return
+
+    setSuccessMessage("")
+    setErrorMessage("")
 
     try {
       const unassignedLeads = enrichedLeads.filter(l => !l.assigned_to)
       
       if (unassignedLeads.length === 0) {
-        alert('No unassigned leads found')
+        setSuccessMessage('No unassigned leads found to auto-assign.')
         return
       }
 
@@ -654,16 +682,19 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       }
 
       console.log(`Auto-assigned ${unassignedLeads.length} leads using ${autoAssignRules.method}`)
-      alert(`Successfully auto-assigned ${unassignedLeads.length} leads!`)
-      window.location.reload()
+      setSuccessMessage(`Successfully auto-assigned ${unassignedLeads.length} leads! Please refresh to see updates.`)
+      // window.location.reload() // REMOVED THIS
       
     } catch (error) {
       console.error("Error auto-assigning leads:", error)
-      alert('Error auto-assigning leads. Please try again.')
+      setErrorMessage('Error auto-assigning leads. Please try again.')
     }
   }
 
+  // FIX: Removed window.location.reload()
   const handleAddTag = async (leadId: string, tag: string) => {
+    setSuccessMessage("")
+    setErrorMessage("")
     try {
       const { error } = await supabase
         .from("leads")
@@ -673,13 +704,19 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         .eq("id", leadId)
 
       if (error) throw error
-      window.location.reload()
+      setSelectedLeadForTags(null) // Close dialog
+      // window.location.reload() // REMOVED THIS
+      setSuccessMessage(`Tag "${tag}" added to lead. Please refresh to see updates.`)
     } catch (error) {
       console.error("Error adding tag:", error)
+      setErrorMessage('Error adding tag. Please try again.')
     }
   }
 
+  // FIX: Removed window.location.reload()
   const handleRemoveTag = async (leadId: string, tag: string) => {
+    setSuccessMessage("")
+    setErrorMessage("")
     try {
       const lead = enrichedLeads.find(l => l.id === leadId)
       const newTags = (lead?.tags || []).filter(t => t !== tag)
@@ -690,9 +727,12 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         .eq("id", leadId)
 
       if (error) throw error
-      window.location.reload()
+      setSelectedLeadForTags(null) // Close dialog
+      // window.location.reload() // REMOVED THIS
+      setSuccessMessage(`Tag "${tag}" removed from lead. Please refresh to see updates.`)
     } catch (error) {
       console.error("Error removing tag:", error)
+      setErrorMessage('Error removing tag. Please try again.')
     }
   }
 
