@@ -20,7 +20,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { LeadStatusDialog } from "@/components/lead-status-dialog"
 import { QuickActions } from "@/components/quick-actions"
-// >>> CORRECTION: The component names must be part of a proper import statement
+// FIX 1: Corrected the path to resolve the "Module not found: Can't resolve '../multi-select-tags'" error
+import { MultiSelectTags } from "./multi-select-tags" 
+// FIX 2: Added the missing 'import' keyword for Dialog components
 import { 
   Dialog, DialogContent, DialogDescription, DialogFooter, 
   DialogHeader, DialogTitle, DialogTrigger 
@@ -42,8 +44,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
-// >>> ADDED MultiSelectTags IMPORT
-import { MultiSelectTags } from "../multi-select-tags"
 
 interface Lead {
   id: string
@@ -135,8 +135,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
   ])
   const [newTag, setNewTag] = useState("")
   const [selectedLeadForTags, setSelectedLeadForTags] = useState<Lead | null>(null)
-  // >>> ADDED STATE FOR BULK TAGS
-  const [tagsToAddBulk, setTagsToAddBulk] = useState<string[]>([])
   
   // Email/SMS
   const [showEmailDialog, setShowEmailDialog] = useState(false)
@@ -556,38 +554,26 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     }
   }
 
-  // >>> REPLACED handleBulkAddTag with handleBulkAddTags
-  const handleBulkAddTags = async (tags: string[]) => {
-    if (selectedLeads.length === 0 || tags.length === 0) return
+  const handleBulkAddTag = async (tag: string) => {
+    if (selectedLeads.length === 0) return
 
     try {
-      const updates = selectedLeads.flatMap((leadId) => {
+      // Update tags for all selected leads
+      const updates = selectedLeads.map(async (leadId) => {
         const lead = enrichedLeads.find(l => l.id === leadId)
-        const currentTags = new Set(lead?.tags || [])
+        const currentTags = lead?.tags || []
         
-        // Filter out tags already present in the lead
-        const tagsToAdd = tags.filter(tag => !currentTags.has(tag))
-
-        if (tagsToAdd.length > 0) {
-          // Create the update promise only if there are new tags to add
-          const newTags = [...currentTags, ...tagsToAdd]
-          return [supabase
+        // Only add if tag doesn't exist
+        if (!currentTags.includes(tag)) {
+          return supabase
             .from("leads")
             .update({ 
-              tags: newTags
+              tags: [...currentTags, tag]
             })
             .eq("id", leadId)
-          ]
         }
-        return [] // Return an empty array if no tags need adding for this lead
+        return Promise.resolve({ error: null })
       })
-      
-      if (updates.length === 0) {
-        setSuccessMessage(`Tags were already present on the selected leads.`)
-        setSelectedLeads([])
-        setTagsToAddBulk([])
-        return
-      }
 
       const results = await Promise.all(updates)
       
@@ -596,15 +582,13 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         throw new Error(`Failed to add tag to ${errors.length} leads`)
       }
 
-      console.log(`Added tags "${tags.join(', ')}" to ${updates.length} leads`)
-      setSuccessMessage(`Successfully added tags to ${updates.length} leads.`)
+      console.log(`Added tag "${tag}" to ${selectedLeads.length} leads`)
       setSelectedLeads([])
-      setTagsToAddBulk([])
-      window.location.reload() // Keeping reload for consistency with user's file pattern
+      window.location.reload()
       
     } catch (error) {
       console.error("Error adding tag:", error)
-      setErrorMessage('Error adding tags. Please try again.')
+      alert('Error adding tag. Please try again.')
     }
   }
 
@@ -1300,45 +1284,27 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                   </DropdownMenuContent>
                 </DropdownMenu>
 
-                {/* >>> REPLACED DropdownMenu with Dialog/MultiSelectTags */}
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button size="sm" variant="outline" disabled={selectedLeads.length === 0}>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline">
                       <Tag className="h-4 w-4 mr-2" />
-                      Bulk Tags
+                      Add Tags
                     </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Add Tags to {selectedLeads.length} Leads</DialogTitle>
-                      <DialogDescription>
-                        Select one or more tags to add to all selected leads.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <Label>Select Tags</Label>
-                      <MultiSelectTags
-                        options={availableTags.map(tag => ({ value: tag, label: tag }))}
-                        selected={tagsToAddBulk}
-                        onChange={setTagsToAddBulk}
-                        placeholder="Choose tags to add..."
-                      />
-                    </div>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setTagsToAddBulk([])}>
-                        Clear Selection
-                      </Button>
-                      <Button 
-                        onClick={() => handleBulkAddTags(tagsToAddBulk)}
-                        disabled={tagsToAddBulk.length === 0}
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuLabel>Add Tag to Selected</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {availableTags.map((tag) => (
+                      <DropdownMenuItem 
+                        key={tag}
+                        onClick={() => handleBulkAddTag(tag)}
                       >
-                        <Tag className="h-4 w-4 mr-2" />
-                        Add {tagsToAddBulk.length} Tag{tagsToAddBulk.length !== 1 ? 's' : ''}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-                {/* <<< END REPLACEMENT */}
+                        <Tag className="h-3 w-3 mr-2" />
+                        {tag}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
 
                 <Button 
                   size="sm" 
