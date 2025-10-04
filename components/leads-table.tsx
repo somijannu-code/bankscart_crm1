@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { 
@@ -11,7 +11,8 @@ import {
   FileText, PhoneCall, Send, Tag, Plus, Trash2,
   BarChart3, Users, DollarSign, Target, Zap,
   Layout, Table as TableIcon, Settings, Save,
-  AlertTriangle, CheckCircle2, XCircle, Sparkles
+  AlertTriangle, CheckCircle2, XCircle, Sparkles,
+  CheckIcon
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -85,6 +86,73 @@ interface LeadsTableProps {
   telecallers: Array<{ id: string; full_name: string }>
 }
 
+// --- Custom MultiSelect Component for Telecallers ---
+interface TelecallerMultiSelectProps {
+  telecallers: Array<{ id: string; full_name: string }>
+  selected: string[]
+  setSelected: (selected: string[]) => void
+  telecallerStatus: Record<string, boolean | undefined>
+}
+
+const TelecallerMultiSelect: React.FC<TelecallerMultiSelectProps> = ({ telecallers, selected, setSelected, telecallerStatus }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const toggleSelection = (id: string) => {
+    if (selected.includes(id)) {
+      setSelected(selected.filter(i => i !== id));
+    } else {
+      setSelected([...selected, id]);
+    }
+  };
+
+  const selectedNames = useMemo(() => {
+    return selected.map(id => telecallers.find(t => t.id === id)?.full_name || 'Unknown');
+  }, [selected, telecallers]);
+
+  return (
+    <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" variant="outline" className="w-[200px] justify-between">
+          <User className="h-4 w-4 mr-2" />
+          {selected.length === 0 ? "Select Telecallers" : `${selected.length} Selected`}
+          <ChevronDown className={`ml-2 h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : 'rotate-0'}`} />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent 
+        forceMount 
+        align="start" 
+        className="z-[9999] w-[200px] max-h-60 overflow-y-auto"
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
+        <DropdownMenuLabel>Assign Leads To</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {telecallers.map((telecaller) => (
+          <DropdownMenuItem 
+            key={telecaller.id}
+            onSelect={(e) => {
+              e.preventDefault(); // Prevent closing dropdown on select
+              toggleSelection(telecaller.id);
+            }}
+            className="flex items-center justify-between"
+          >
+            <div className="flex items-center gap-2">
+              {telecallerStatus[telecaller.id] !== undefined && (
+                <div className={`w-2 h-2 rounded-full ${telecallerStatus[telecaller.id] ? 'bg-green-500' : 'bg-red-500'}`} />
+              )}
+              {telecaller.full_name}
+            </div>
+            {selected.includes(telecaller.id) && (
+              <CheckIcon className="h-4 w-4 text-primary" />
+            )}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+};
+// --- End MultiSelect Component ---
+
+
 export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false)
@@ -116,7 +184,8 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [selectedLeads, setSelectedLeads] = useState<string[]>([])
-  const [bulkAssignTo, setBulkAssignTo] = useState<string[]>([])
+  // State for multi-select telecaller assignment
+  const [bulkAssignTo, setBulkAssignTo] = useState<string[]>([]) 
   const [bulkStatus, setBulkStatus] = useState<string>("")
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table')
@@ -382,7 +451,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       headers.join(','),
       ...filteredLeads.map(lead => 
         headers.map(h => {
-          const val = lead[h as keyof Lead]
+          const val = (lead as any)[h] // Use (lead as any)[h] for flexible property access
           return typeof val === 'string' ? `"${val}"` : val
         }).join(',')
       )
@@ -466,6 +535,9 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     console.log('Subject:', emailSubject)
     console.log('Body:', emailBody)
     
+    setSuccessMessage(`Simulated: Email sent to ${selectedLeads.length} leads.`);
+    setSelectedLeads([]);
+    setBulkAssignTo([]);
     setShowEmailDialog(false)
     setEmailSubject("")
     setEmailBody("")
@@ -478,14 +550,24 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     console.log('Sending SMS to', selectedLeads.length, 'leads')
     console.log('Message:', smsBody)
     
+    setSuccessMessage(`Simulated: SMS sent to ${selectedLeads.length} leads.`);
+    setSelectedLeads([]);
+    setBulkAssignTo([]);
     setShowSMSDialog(false)
     setSmsBody("")
   }
 
-  // --- START: UPDATED BULK ASSIGN (SEQUENTIAL) ---
-  const handleBulkAssign = async (telecallerId: string) => {
-    if (selectedLeads.length === 0) return
-
+  // --- START: UPDATED BULK ASSIGN (SEQUENTIAL ROUND-ROBIN) ---
+  const handleBulkAssign = async () => {
+    if (selectedLeads.length === 0) {
+      setErrorMessage("Please select leads to assign.");
+      return;
+    }
+    if (bulkAssignTo.length === 0) {
+      setErrorMessage("Please select at least one telecaller for assignment.");
+      return;
+    }
+    
     // Clear previous messages
     setSuccessMessage("");
     setErrorMessage("");
@@ -493,16 +575,23 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       const assignedById = user?.id
+      
+      const telecallerIds = bulkAssignTo; 
+      let telecallerIndex = 0; // Index for round-robin
+      
       let successfulUpdates = 0;
       let failedUpdates = 0;
       const totalLeads = selectedLeads.length;
 
-      // Iterate over selected leads and update one by one
+      // Iterate over selected leads and update one by one (Sequential)
       for (const leadId of selectedLeads) {
+        // 1. Determine the telecaller for this lead using round-robin
+        const telecallerId = telecallerIds[telecallerIndex % telecallerIds.length];
+
         const { error } = await supabase
           .from("leads")
           .update({ 
-            assigned_to: telecallerId === 'unassigned' ? null : telecallerId,
+            assigned_to: telecallerId,
             assigned_by: assignedById,
             assigned_at: new Date().toISOString()
           })
@@ -510,24 +599,30 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
           
         if (error) {
           failedUpdates++;
-          console.error(`Failed to assign lead ${leadId}:`, error);
+          console.error(`Failed to assign lead ${leadId} to telecaller ${telecallerId}:`, error);
         } else {
           successfulUpdates++;
         }
         
-        // Add a small delay to prevent rate-limiting (crucial for sequential updates)
+        // 2. Move to the next telecaller for the next lead
+        telecallerIndex++; 
+        
+        // 3. Add a small delay to prevent rate-limiting (crucial for sequential updates)
         await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay
       }
 
-      const assignedToName = telecallers.find(t => t.id === telecallerId)?.full_name || (telecallerId === 'unassigned' ? 'Unassigned' : 'Unknown');
+      const assignedCountMessage = bulkAssignTo.length === 1 
+        ? telecallers.find(t => t.id === bulkAssignTo[0])?.full_name || 'One Telecaller'
+        : `${bulkAssignTo.length} telecallers (Round-Robin)`;
 
       if (failedUpdates > 0) {
-        setErrorMessage(`Assigned ${successfulUpdates} lead${successfulUpdates === 1 ? '' : 's'} to ${assignedToName}, but failed to assign ${failedUpdates} due to an error.`);
+        setErrorMessage(`Assigned ${successfulUpdates} lead${successfulUpdates === 1 ? '' : 's'} across ${assignedCountMessage}, but failed to assign ${failedUpdates} due to an error.`);
       } else {
-        setSuccessMessage(`Successfully assigned all ${totalLeads} lead${totalLeads === 1 ? '' : 's'} to ${assignedToName}.`);
+        setSuccessMessage(`Successfully assigned all ${totalLeads} lead${totalLeads === 1 ? '' : 's'} across ${assignedCountMessage}.`);
       }
       
       setSelectedLeads([]);
+      setBulkAssignTo([]); // Clear selected telecallers
 
       // Reload the page after 1.5 seconds to allow the success/error message to be visible
       setTimeout(() => window.location.reload(), 1500);
@@ -537,7 +632,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       setErrorMessage('Critical error during assignment. Please check the console for details.');
     }
   }
-  // --- END: UPDATED BULK ASSIGN (SEQUENTIAL) ---
+  // --- END: UPDATED BULK ASSIGN (SEQUENTIAL ROUND-ROBIN) ---
 
   // --- START: UPDATED BULK STATUS (SEQUENTIAL) ---
   const handleBulkStatusUpdate = async (newStatus: string) => {
@@ -582,6 +677,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       }
       
       setSelectedLeads([]);
+      setBulkAssignTo([]);
 
       // Reload the page after 1.5 seconds
       setTimeout(() => window.location.reload(), 1500);
@@ -642,6 +738,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       }
       
       setSelectedLeads([]);
+      setBulkAssignTo([]);
 
       // Reload the page after 1.5 seconds
       setTimeout(() => window.location.reload(), 1500);
@@ -1275,39 +1372,25 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                   </DialogContent>
                 </Dialog>
 
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="sm" variant="outline">
-                      <User className="h-4 w-4 mr-2" />
-                      Assign
-                    </Button>
-                  </DropdownMenuTrigger>
-                  {/* UI FIX: Added forceMount and high z-index class for clipping/stacking issues */}
-                  <DropdownMenuContent 
-                    forceMount 
-                    align="start" 
-                    className="z-[9999]" // High z-index to fix potential stacking context issue
+                {/* Bulk Assignment Control (Multi-Select) */}
+                <div className="flex items-center gap-2">
+                  <TelecallerMultiSelect
+                    telecallers={telecallers}
+                    selected={bulkAssignTo}
+                    setSelected={setBulkAssignTo}
+                    telecallerStatus={telecallerStatus}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleBulkAssign}
+                    disabled={bulkAssignTo.length === 0}
+                    className="flex-shrink-0"
                   >
-                    <DropdownMenuLabel>Assign to Telecaller</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => handleBulkAssign('unassigned')}>
-                      Unassign All
-                    </DropdownMenuItem>
-                    {telecallers.map((telecaller) => (
-                      <DropdownMenuItem 
-                        key={telecaller.id}
-                        onClick={() => handleBulkAssign(telecaller.id)}
-                      >
-                        <div className="flex items-center gap-2">
-                          {telecallerStatus[telecaller.id] !== undefined && (
-                            <div className={`w-2 h-2 rounded-full ${telecallerStatus[telecaller.id] ? 'bg-green-500' : 'bg-red-500'}`} />
-                          )}
-                          {telecaller.full_name}
-                        </div>
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                    <User className="h-4 w-4 mr-2" />
+                    Assign
+                  </Button>
+                </div>
+
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -1377,9 +1460,12 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                 <Button 
                   size="sm" 
                   variant="outline"
-                  onClick={() => setSelectedLeads([])}
+                  onClick={() => {
+                    setSelectedLeads([])
+                    setBulkAssignTo([])
+                  }}
                 >
-                  Clear
+                  Clear Selection
                 </Button>
               </div>
             </div>
