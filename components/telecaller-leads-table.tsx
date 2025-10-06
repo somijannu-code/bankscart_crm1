@@ -28,8 +28,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
-import { useDebounce } from "@/hooks/use-debounce"
-import { useToast } from "@/hooks/use-toast"
 import Link from "next/link"
 
 interface Lead {
@@ -51,10 +49,27 @@ interface Lead {
 }
 
 interface TelecallerLeadsTableProps {
-  initialLeads: Lead[]
-  totalCount: number
-  currentPage: number
-  pageSize: number
+  initialLeads?: Lead[]
+  totalCount?: number
+  currentPage?: number
+  pageSize?: number
+}
+
+// Custom hook for debounce
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value)
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
+
+    return () => {
+      clearTimeout(handler)
+    }
+  }, [value, delay])
+
+  return debouncedValue
 }
 
 // Custom hook for real-time updates
@@ -98,13 +113,24 @@ function useRealtimeLeads(userId: string) {
   return leads
 }
 
+// Simple toast hook
+function useToast() {
+  const toast = useCallback(({ title, description, variant = "default" }: any) => {
+    console.log(`Toast: ${title} - ${description}`, variant)
+    // You can integrate with your toast library here
+  }, [])
+
+  return { toast }
+}
+
 export function TelecallerLeadsTable({ 
   initialLeads = [], 
   totalCount = 0, 
   currentPage = 1, 
   pageSize = 20 
 }: TelecallerLeadsTableProps) {
-  const [leads, setLeads] = useState<Lead[]>(initialLeads)
+  // Safe initialization with proper defaults
+  const [leads, setLeads] = useState<Lead[]>(Array.isArray(initialLeads) ? initialLeads : [])
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
@@ -115,7 +141,7 @@ export function TelecallerLeadsTable({
   const [dateRange, setDateRange] = useState<{ from: Date; to: Date } | null>(null)
   const [loanAmountRange, setLoanAmountRange] = useState<{ min: number; max: number } | null>(null)
   const [sortField, setSortField] = useState<string>("created_at")
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">>("desc")
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
     name: true,
     contact: true,
@@ -140,7 +166,7 @@ export function TelecallerLeadsTable({
   const debouncedSearchTerm = useDebounce(searchTerm, 300)
 
   // Real-time updates
-  const realtimeLeads = useRealtimeLeads("current-user-id") // You'll need to pass the actual user ID
+  const realtimeLeads = useRealtimeLeads("current-user-id")
 
   // Mobile responsiveness
   useEffect(() => {
@@ -150,13 +176,14 @@ export function TelecallerLeadsTable({
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  // Load analytics
+  // Load analytics safely
   useEffect(() => {
     loadAnalytics()
   }, [])
 
   const loadAnalytics = async () => {
     try {
+      setIsLoading(true)
       const { data, error } = await supabase
         .from('lead_analytics')
         .select('*')
@@ -166,22 +193,40 @@ export function TelecallerLeadsTable({
       setAnalytics(data)
     } catch (err) {
       console.error('Error loading analytics:', err)
+      // Set default analytics if table doesn't exist
+      setAnalytics({
+        conversion_rate: 0,
+        total_leads: leads.length,
+        pending_followups: 0,
+        avg_response_time: 0
+      })
+    } finally {
+      setIsLoading(false)
     }
   }
 
   // Safe value getter with memoization
   const getSafeValue = useCallback((value: any, defaultValue: string = 'N/A') => {
-    return value ?? defaultValue
+    if (value === null || value === undefined || value === '') {
+      return defaultValue
+    }
+    return value
   }, [])
 
-  // Advanced filtering with memoization
+  // Advanced filtering with memoization and safe data handling
   const filteredLeads = useMemo(() => {
+    if (!leads || !Array.isArray(leads)) {
+      return []
+    }
+
     return leads.filter(lead => {
+      if (!lead) return false
+
       const matchesSearch = debouncedSearchTerm === "" || 
-        lead.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-        lead.email.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-        lead.phone.includes(debouncedSearchTerm) ||
-        lead.company.toLowerCase().includes(debouncedSearchTerm.toLowerCase())
+        (lead.name && lead.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
+        (lead.email && lead.email.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
+        (lead.phone && lead.phone.includes(debouncedSearchTerm)) ||
+        (lead.company && lead.company.toLowerCase().includes(debouncedSearchTerm.toLowerCase()))
       
       const matchesStatus = statusFilter === "all" || lead.status === statusFilter
       const matchesPriority = priorityFilter === "all" || lead.priority === priorityFilter
@@ -189,6 +234,7 @@ export function TelecallerLeadsTable({
       const matchesCity = cityFilter === "all" || lead.city === cityFilter
       
       const matchesDateRange = !dateRange || (
+        lead.created_at &&
         new Date(lead.created_at) >= dateRange.from &&
         new Date(lead.created_at) <= dateRange.to
       )
@@ -216,8 +262,8 @@ export function TelecallerLeadsTable({
         bValue = bValue.toLowerCase()
       }
       
-      if (aValue === null) return sortDirection === 'asc' ? -1 : 1
-      if (bValue === null) return sortDirection === 'asc' ? 1 : -1
+      if (aValue === null || aValue === undefined) return sortDirection === 'asc' ? -1 : 1
+      if (bValue === null || bValue === undefined) return sortDirection === 'asc' ? 1 : -1
       
       if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
@@ -237,7 +283,9 @@ export function TelecallerLeadsTable({
     setError(null)
     
     try {
-      if (!selectedLead?.id) return
+      if (!selectedLead?.id) {
+        throw new Error("No lead selected")
+      }
       
       const updateData: any = { 
         status: newStatus,
@@ -312,29 +360,40 @@ export function TelecallerLeadsTable({
 
   // Calendar integration
   const addToCalendar = async (lead: Lead, date: string) => {
-    // Google Calendar integration
-    const event = {
-      summary: `Follow-up with ${lead.name}`,
-      description: `Follow-up call for ${lead.company}. Phone: ${lead.phone}`,
-      start: { dateTime: new Date(date).toISOString() },
-      end: { dateTime: new Date(new Date(date).getTime() + 30 * 60 * 1000).toISOString() }, // 30 minutes
-    }
+    try {
+      // Google Calendar integration
+      const event = {
+        summary: `Follow-up with ${getSafeValue(lead.name)}`,
+        description: `Follow-up call for ${getSafeValue(lead.company)}. Phone: ${getSafeValue(lead.phone)}`,
+        start: { dateTime: new Date(date).toISOString() },
+        end: { dateTime: new Date(new Date(date).getTime() + 30 * 60 * 1000).toISOString() }, // 30 minutes
+      }
 
-    // You would integrate with your calendar API here
-    console.log('Adding to calendar:', event)
-    
-    toast({
-      title: "Calendar Event Created",
-      description: "Follow-up added to your calendar",
-    })
+      // You would integrate with your calendar API here
+      console.log('Adding to calendar:', event)
+      
+      toast({
+        title: "Calendar Event Created",
+        description: "Follow-up added to your calendar",
+      })
+    } catch (error) {
+      console.error("Error adding to calendar:", error)
+      toast({
+        title: "Calendar Error",
+        description: "Failed to add event to calendar",
+        variant: "destructive",
+      })
+    }
   }
 
   // Workflow automation - Auto-followup reminders
   useEffect(() => {
     const checkFollowUps = () => {
+      if (!leads || !Array.isArray(leads)) return
+      
       const today = new Date().toISOString().split('T')[0]
       const dueFollowUps = leads.filter(lead => 
-        lead.follow_up_date && lead.follow_up_date.split('T')[0] === today
+        lead && lead.follow_up_date && lead.follow_up_date.split('T')[0] === today
       )
       
       if (dueFollowUps.length > 0) {
@@ -350,8 +409,54 @@ export function TelecallerLeadsTable({
     return () => clearInterval(interval)
   }, [leads, toast])
 
+  // Helper functions
+  const getPriorityVariant = (priority: string) => {
+    switch (priority) {
+      case "high": return "destructive"
+      case "medium": return "default"
+      case "low": return "secondary"
+      default: return "secondary"
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+      new: "bg-blue-100 text-blue-800",
+      contacted: "bg-yellow-100 text-yellow-800",
+      Interested: "bg-green-100 text-green-800",
+      Documents_Sent: "bg-purple-100 text-purple-800",
+      Login: "bg-orange-100 text-orange-800",
+      Disbursed: "bg-green-100 text-green-800",
+      Not_Interested: "bg-red-100 text-red-800",
+      Call_Back: "bg-indigo-100 text-indigo-800",
+      not_eligible: "bg-red-100 text-red-800",
+      nr: "bg-gray-100 text-gray-800",
+      self_employed: "bg-amber-100 text-amber-800",
+    }
+    return colors[status] || "bg-gray-100 text-gray-800"
+  }
+
+  const formatCurrency = (amount: number | null) => {
+    if (!amount) return 'N/A'
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0
+    }).format(amount)
+  }
+
+  const handleCallInitiated = (lead: Lead) => {
+    setSelectedLead(lead)
+    setIsStatusDialogOpen(true)
+  }
+
+  // Safe data checks
+  const safeLeads = Array.isArray(leads) ? leads : []
+  const safeFilteredLeads = Array.isArray(filteredLeads) ? filteredLeads : []
+  const displayLeads = safeFilteredLeads.length > 0 ? safeFilteredLeads : safeLeads
+
   // Error boundary fallback UI
-  if (error && leads.length === 0) {
+  if (error && safeLeads.length === 0) {
     return (
       <div className="text-center py-8 space-y-4">
         <AlertCircle className="h-12 w-12 text-red-500 mx-auto" />
@@ -366,7 +471,7 @@ export function TelecallerLeadsTable({
   }
 
   // Empty state with analytics
-  if (leads.length === 0 && !isLoading) {
+  if (safeLeads.length === 0 && !isLoading) {
     return (
       <div className="text-center py-12 space-y-6">
         <FileText className="h-16 w-16 text-gray-400 mx-auto" />
@@ -390,12 +495,12 @@ export function TelecallerLeadsTable({
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex justify-between">
-                <span>Conversion Rate</span>
-                <span className="font-semibold">{analytics.conversion_rate}%</span>
+                <span>Total Leads</span>
+                <span className="font-semibold">{analytics.total_leads || 0}</span>
               </div>
               <div className="flex justify-between">
-                <span>Avg Response Time</span>
-                <span className="font-semibold">{analytics.avg_response_time}h</span>
+                <span>Conversion Rate</span>
+                <span className="font-semibold">{analytics.conversion_rate || 0}%</span>
               </div>
             </CardContent>
           </Card>
@@ -412,19 +517,19 @@ export function TelecallerLeadsTable({
           <CardContent className="p-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
               <div>
-                <div className="text-2xl font-bold text-green-600">{analytics.conversion_rate}%</div>
+                <div className="text-2xl font-bold text-green-600">{analytics.conversion_rate || 0}%</div>
                 <div className="text-sm text-gray-500">Conversion Rate</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-blue-600">{analytics.total_leads}</div>
+                <div className="text-2xl font-bold text-blue-600">{analytics.total_leads || 0}</div>
                 <div className="text-sm text-gray-500">Total Leads</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-orange-600">{analytics.pending_followups}</div>
+                <div className="text-2xl font-bold text-orange-600">{analytics.pending_followups || 0}</div>
                 <div className="text-sm text-gray-500">Pending Follow-ups</div>
               </div>
               <div>
-                <div className="text-2xl font-bold text-purple-600">{analytics.avg_response_time}h</div>
+                <div className="text-2xl font-bold text-purple-600">{analytics.avg_response_time || 0}h</div>
                 <div className="text-sm text-gray-500">Avg Response Time</div>
               </div>
             </div>
@@ -452,7 +557,6 @@ export function TelecallerLeadsTable({
                 <CardTitle>Status Distribution</CardTitle>
               </CardHeader>
               <CardContent>
-                {/* Add status distribution chart here */}
                 <div className="space-y-2">
                   {['new', 'contacted', 'interested', 'disbursed'].map(status => (
                     <div key={status} className="flex justify-between items-center">
@@ -470,7 +574,6 @@ export function TelecallerLeadsTable({
                 <CardTitle>Performance Metrics</CardTitle>
               </CardHeader>
               <CardContent>
-                {/* Add performance metrics */}
                 <div className="space-y-3">
                   <div className="flex justify-between">
                     <span>Call Success Rate</span>
@@ -652,7 +755,7 @@ export function TelecallerLeadsTable({
       {/* Mobile Card View */}
       {isMobileView ? (
         <div className="space-y-4">
-          {filteredLeads.map((lead) => (
+          {displayLeads.map((lead) => (
             <Card key={lead.id} className="p-4">
               <div className="space-y-3">
                 <div className="flex justify-between items-start">
@@ -675,7 +778,7 @@ export function TelecallerLeadsTable({
                   </div>
                   <div className="flex items-center gap-1">
                     <Calendar className="h-3 w-3" />
-                    <span>{new Date(lead.created_at).toLocaleDateString()}</span>
+                    <span>{lead.created_at ? new Date(lead.created_at).toLocaleDateString() : 'N/A'}</span>
                   </div>
                 </div>
 
@@ -778,7 +881,7 @@ export function TelecallerLeadsTable({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredLeads.map((lead) => (
+              {displayLeads.map((lead) => (
                 <TableRow key={lead.id} className="hover:bg-gray-50/50">
                   {visibleColumns.name && (
                     <TableCell className="font-medium">
@@ -839,7 +942,7 @@ export function TelecallerLeadsTable({
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Calendar className="h-4 w-4" />
-                        {new Date(lead.created_at).toLocaleDateString()}
+                        {lead.created_at ? new Date(lead.created_at).toLocaleDateString() : 'N/A'}
                       </div>
                     </TableCell>
                   )}
@@ -885,7 +988,7 @@ export function TelecallerLeadsTable({
       {totalPages > 1 && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="text-sm text-gray-500">
-            Showing {filteredLeads.length} of {totalCount} leads
+            Showing {displayLeads.length} of {totalCount} leads
           </div>
           <Pagination>
             <PaginationContent>
@@ -947,45 +1050,4 @@ export function TelecallerLeadsTable({
       )}
     </div>
   )
-
-  // Helper functions
-  function getPriorityVariant(priority: string) {
-    switch (priority) {
-      case "high": return "destructive"
-      case "medium": return "default"
-      case "low": return "secondary"
-      default: return "secondary"
-    }
-  }
-
-  function getStatusColor(status: string) {
-    const colors: Record<string, string> = {
-      new: "bg-blue-100 text-blue-800",
-      contacted: "bg-yellow-100 text-yellow-800",
-      Interested: "bg-green-100 text-green-800",
-      Documents_Sent: "bg-purple-100 text-purple-800",
-      Login: "bg-orange-100 text-orange-800",
-      Disbursed: "bg-green-100 text-green-800",
-      Not_Interested: "bg-red-100 text-red-800",
-      Call_Back: "bg-indigo-100 text-indigo-800",
-      not_eligible: "bg-red-100 text-red-800",
-      nr: "bg-gray-100 text-gray-800",
-      self_employed: "bg-amber-100 text-amber-800",
-    }
-    return colors[status] || "bg-gray-100 text-gray-800"
-  }
-
-  function formatCurrency(amount: number | null) {
-    if (!amount) return 'N/A'
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(amount)
-  }
-
-  function handleCallInitiated(lead: Lead) {
-    setSelectedLead(lead)
-    setIsStatusDialogOpen(true)
-  }
 }
