@@ -53,6 +53,7 @@ interface TelecallerLeadsTableProps {
   totalCount?: number
   currentPage?: number
   pageSize?: number
+  userId?: string // Add userId prop
 }
 
 // Custom hook for debounce
@@ -76,7 +77,8 @@ export function TelecallerLeadsTable({
   initialLeads = [], 
   totalCount = 0, 
   currentPage = 1, 
-  pageSize = 20 
+  pageSize = 20,
+  userId // Receive userId prop
 }: TelecallerLeadsTableProps) {
   // Safe initialization with proper defaults
   const [leads, setLeads] = useState<Lead[]>(Array.isArray(initialLeads) ? initialLeads : [])
@@ -110,20 +112,103 @@ export function TelecallerLeadsTable({
   const [analytics, setAnalytics] = useState<any>(null)
   const [activeTab, setActiveTab] = useState("all")
   const [appliedFilters, setAppliedFilters] = useState<string[]>([])
+  const [totalLeadsCount, setTotalLeadsCount] = useState(totalCount)
 
   const supabase = createClient()
   const debouncedSearchTerm = useDebounce(searchTerm, 300)
 
   // Calculate totalPages safely
   const totalPages = useMemo(() => {
-    const safeTotalCount = totalCount || 0
+    const safeTotalCount = totalLeadsCount || 0
     const safePageSize = pageSize || 20
     return Math.ceil(safeTotalCount / safePageSize)
-  }, [totalCount, pageSize])
+  }, [totalLeadsCount, pageSize])
+
+  // Fetch leads data when component mounts or filters change
+  useEffect(() => {
+    fetchLeads()
+  }, [userId, currentPage, debouncedSearchTerm, statusFilter, priorityFilter, activeTab])
+
+  // Function to fetch leads from Supabase
+  const fetchLeads = async () => {
+    if (!userId) {
+      console.warn("No userId provided, cannot fetch leads")
+      return
+    }
+
+    setIsLoading(true)
+    setError(null)
+    
+    try {
+      // Build the query
+      let query = supabase
+        .from("leads")
+        .select("*", { count: "exact" })
+        .eq("assigned_to", userId) // Use the userId prop
+
+      // Apply search filter
+      if (debouncedSearchTerm) {
+        query = query.or(`name.ilike.%${debouncedSearchTerm}%,email.ilike.%${debouncedSearchTerm}%,phone.ilike.%${debouncedSearchTerm}%,company.ilike.%${debouncedSearchTerm}%`)
+      }
+
+      // Apply status filter
+      if (statusFilter !== "all") {
+        query = query.eq("status", statusFilter)
+      }
+
+      // Apply priority filter
+      if (priorityFilter !== "all") {
+        query = query.eq("priority", priorityFilter)
+      }
+
+      // Apply tab filters
+      if (activeTab === "new") {
+        query = query.eq("status", "new")
+      } else if (activeTab === "follow_up") {
+        query = query.not("follow_up_date", "is", null)
+      } else if (activeTab === "high_priority") {
+        query = query.eq("priority", "high")
+      }
+
+      // Apply sorting
+      if (sortField) {
+        query = query.order(sortField, { ascending: sortDirection === "asc" })
+      } else {
+        query = query.order("created_at", { ascending: false })
+      }
+
+      // Apply pagination
+      const from = (currentPage - 1) * pageSize
+      const to = from + pageSize - 1
+      query = query.range(from, to)
+
+      const { data, error, count } = await query
+
+      if (error) {
+        throw error
+      }
+
+      console.log('Fetched leads:', data?.length, 'Total count:', count)
+
+      setLeads(data || [])
+      setTotalLeadsCount(count || 0)
+
+    } catch (err) {
+      console.error("Error fetching leads:", err)
+      setError("Failed to load leads. Please try again.")
+      
+      // Fallback to initialLeads if available
+      if (initialLeads && initialLeads.length > 0) {
+        setLeads(initialLeads)
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   // Update leads when initialLeads changes
   useEffect(() => {
-    if (Array.isArray(initialLeads) && initialLeads.length > 0) {
+    if (Array.isArray(initialLeads) && initialLeads.length > 0 && leads.length === 0) {
       setLeads(initialLeads)
     }
   }, [initialLeads])
@@ -202,6 +287,11 @@ export function TelecallerLeadsTable({
     setDateRange(null)
     setLoanAmountRange(null)
     setActiveTab("all")
+  }
+
+  // Handle refresh
+  const handleRefresh = () => {
+    fetchLeads()
   }
 
   // Advanced filtering with memoization and safe data handling
@@ -342,12 +432,8 @@ export function TelecallerLeadsTable({
 
       if (error) throw error
 
-      // Update local state instead of reloading
-      setLeads(prev => prev.map(lead => 
-        lead.id === selectedLead.id 
-          ? { ...lead, ...updateData }
-          : lead
-      ))
+      // Refresh the leads data after update
+      await fetchLeads()
 
       // Show success message
       console.log(`Status updated to ${newStatus}`)
@@ -412,7 +498,8 @@ export function TelecallerLeadsTable({
     initialLeads: initialLeads?.length,
     leads: safeLeads.length,
     filteredLeads: safeFilteredLeads.length,
-    displayLeads: displayLeads.length
+    displayLeads: displayLeads.length,
+    totalLeadsCount
   })
 
   // Error boundary fallback UI
@@ -422,7 +509,7 @@ export function TelecallerLeadsTable({
         <AlertCircle className="h-12 w-12 text-red-500 mx-auto" />
         <h3 className="text-lg font-semibold">Failed to load leads</h3>
         <p className="text-gray-500">{error}</p>
-        <Button onClick={() => window.location.reload()}>
+        <Button onClick={handleRefresh}>
           <RefreshCw className="h-4 w-4 mr-2" />
           Retry
         </Button>
@@ -435,13 +522,18 @@ export function TelecallerLeadsTable({
       {/* Header with lead count */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">My Assigned Leads ({totalCount || safeLeads.length})</h2>
+          <h2 className="text-2xl font-bold text-gray-900">My Assigned Leads ({totalLeadsCount})</h2>
           <p className="text-gray-600 mt-1">Manage and follow up with your assigned leads</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" className="flex items-center gap-2">
-            <Download className="h-4 w-4" />
-            Export
+          <Button 
+            variant="outline" 
+            className="flex items-center gap-2"
+            onClick={handleRefresh}
+            disabled={isLoading}
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
           </Button>
           <Button className="flex items-center gap-2">
             <User className="h-4 w-4" />
@@ -450,324 +542,6 @@ export function TelecallerLeadsTable({
         </div>
       </div>
 
-      {/* Analytics & Insights Bar */}
-      {analytics && (
-        <Card>
-          <CardContent className="p-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-              <div>
-                <div className="text-2xl font-bold text-green-600">{analytics.conversion_rate || 0}%</div>
-                <div className="text-sm text-gray-500">Conversion Rate</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-blue-600">{analytics.total_leads || 0}</div>
-                <div className="text-sm text-gray-500">Total Leads</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-orange-600">{analytics.pending_followups || 0}</div>
-                <div className="text-sm text-gray-500">Pending Follow-ups</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-purple-600">{analytics.avg_response_time || 0}h</div>
-                <div className="text-sm text-gray-500">Avg Response Time</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Tabs for different lead views */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-5 w-full">
-          <TabsTrigger value="all">All Leads</TabsTrigger>
-          <TabsTrigger value="new">New</TabsTrigger>
-          <TabsTrigger value="follow_up">Follow-up</TabsTrigger>
-          <TabsTrigger value="high_priority">High Priority</TabsTrigger>
-          <TabsTrigger value="analytics">
-            <BarChart3 className="h-4 w-4" />
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="analytics" className="space-y-4">
-          {/* Advanced analytics view */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Status Distribution</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {['new', 'contacted', 'interested', 'disbursed'].map(status => (
-                    <div key={status} className="flex justify-between items-center">
-                      <span className="capitalize">{status}</span>
-                      <div className="w-24">
-                        <Progress value={Math.random() * 100} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Performance Metrics</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span>Call Success Rate</span>
-                    <span className="font-semibold">68%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Response Rate</span>
-                    <span className="font-semibold">45%</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
-
-      {/* Enhanced Filters and Search */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="space-y-4">
-            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-              <div className="relative w-full lg:w-64">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search leads..."
-                  className="pl-8"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-              
-              <div className="flex flex-wrap gap-2 w-full lg:w-auto">
-                {/* Advanced Filters Popover */}
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="flex items-center gap-2">
-                      <Filter className="h-4 w-4" />
-                      Filters
-                      {appliedFilters.length > 0 && (
-                        <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center">
-                          {appliedFilters.length}
-                        </Badge>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-80">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-medium">Advanced Filters</h4>
-                        {appliedFilters.length > 0 && (
-                          <Button variant="ghost" size="sm" onClick={clearAllFilters}>
-                            Clear All
-                          </Button>
-                        )}
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium mb-2 block">Date Range</label>
-                        <CalendarComponent
-                          mode="range"
-                          selected={dateRange}
-                          onSelect={setDateRange}
-                        />
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium mb-2 block">Loan Amount Range</label>
-                        <div className="flex gap-2">
-                          <Input
-                            type="number"
-                            placeholder="Min"
-                            onChange={(e) => setLoanAmountRange(prev => ({
-                              ...prev,
-                              min: parseInt(e.target.value) || 0
-                            }))}
-                          />
-                          <Input
-                            type="number"
-                            placeholder="Max"
-                            onChange={(e) => setLoanAmountRange(prev => ({
-                              ...prev,
-                              max: parseInt(e.target.value) || 1000000
-                            }))}
-                          />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Select value={sourceFilter} onValueChange={setSourceFilter}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Source" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All Sources</SelectItem>
-                            <SelectItem value="website">Website</SelectItem>
-                            <SelectItem value="referral">Referral</SelectItem>
-                            <SelectItem value="campaign">Campaign</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Select value={cityFilter} onValueChange={setCityFilter}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="City" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All Cities</SelectItem>
-                            <SelectItem value="mumbai">Mumbai</SelectItem>
-                            <SelectItem value="delhi">Delhi</SelectItem>
-                            <SelectItem value="bangalore">Bangalore</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-40">
-                    <SelectValue placeholder="All Statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    <SelectItem value="new">New</SelectItem>
-                    <SelectItem value="contacted">Contacted</SelectItem>
-                    <SelectItem value="Interested">Interested</SelectItem>
-                    <SelectItem value="Documents_Sent">Documents Sent</SelectItem>
-                    <SelectItem value="Login">Login</SelectItem>
-                    <SelectItem value="Disbursed">Disbursed</SelectItem>
-                    <SelectItem value="Not_Interested">Not Interested</SelectItem>
-                    <SelectItem value="Call_Back">Call Back</SelectItem>
-                    <SelectItem value="not_eligible">Not Eligible</SelectItem>
-                  </SelectContent>
-                </Select>
-                
-                <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                  <SelectTrigger className="w-40">
-                    <SelectValue placeholder="All Priorities" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Priorities</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="low">Low</SelectItem>
-                  </SelectContent>
-                </Select>
-                
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline">
-                      Columns <ChevronDown className="ml-2 h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {Object.entries(visibleColumns).map(([key, value]) => (
-                      <DropdownMenuCheckboxItem
-                        key={key}
-                        className="capitalize"
-                        checked={value}
-                        onCheckedChange={(checked) =>
-                          setVisibleColumns({ ...visibleColumns, [key]: checked })
-                        }
-                      >
-                        {key.replace(/([A-Z])/g, ' $1').toLowerCase()}
-                      </DropdownMenuCheckboxItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                {/* Mobile view toggle */}
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setIsMobileView(!isMobileView)}
-                  className="lg:hidden"
-                >
-                  <Smartphone className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            {/* Applied filters display */}
-            {appliedFilters.length > 0 && (
-              <div className="flex flex-wrap gap-2 items-center">
-                <span className="text-sm text-gray-500">Applied filters:</span>
-                {appliedFilters.map((filter, index) => (
-                  <Badge key={index} variant="secondary" className="flex items-center gap-1">
-                    {filter}
-                    <X 
-                      className="h-3 w-3 cursor-pointer" 
-                      onClick={() => {
-                        // Implement individual filter removal logic here
-                        if (filter.includes('Status:')) setStatusFilter('all')
-                        else if (filter.includes('Priority:')) setPriorityFilter('all')
-                        else if (filter.includes('Source:')) setSourceFilter('all')
-                        else if (filter.includes('City:')) setCityFilter('all')
-                        else if (filter.includes('Date Range:')) setDateRange(null)
-                        else if (filter.includes('Loan:')) setLoanAmountRange(null)
-                        else if (filter.includes('Search:')) setSearchTerm('')
-                        else if (filter.includes('Tab:')) setActiveTab('all')
-                      }}
-                    />
-                  </Badge>
-                ))}
-                <Button variant="ghost" size="sm" onClick={clearAllFilters}>
-                  Clear All
-                </Button>
-              </div>
-            )}
-
-            {/* Loading state */}
-            {isLoading && (
-              <div className="flex items-center justify-center py-4">
-                <RefreshCw className="h-4 w-4 animate-spin mr-2" />
-                <span>Loading leads...</span>
-              </div>
-            )}
-
-            {/* Error state */}
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 text-red-600" />
-                  <span className="text-red-800">{error}</span>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => setError(null)}>
-                  Dismiss
-                </Button>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Results count */}
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-500">
-          Showing {displayLeads.length} of {safeLeads.length} leads
-          {appliedFilters.length > 0 && ' (filtered)'}
-        </div>
-        {appliedFilters.length > 0 && displayLeads.length === 0 && (
-          <Button variant="outline" size="sm" onClick={clearAllFilters}>
-            Clear filters to see all leads
-          </Button>
-        )}
-      </div>
-
-      {/* Empty state - only show when there are truly no leads */}
-      {safeLeads.length === 0 ? (
-        <div className="text-center py-12 space-y-6">
-          <FileText className="h-16 w-16 text-gray-400 mx-auto" />
-          <div>
-            <h3 className="text-lg font-semibold mb-2">No leads found</h3>
-            <p className="text-gray-500 mb-4">Get started by importing leads or creating a new one</p>
-          </div>
-          <div className="flex gap-4 justify-center">
-            <Button>Import Leads</Button>
-            <Button variant="outline">Create Lead</Button>
-          </div>
-        </div>
       ) : displayLeads.length === 0 ? (
         // No results after filtering
         <div className="text-center py-12 space-y-6">
