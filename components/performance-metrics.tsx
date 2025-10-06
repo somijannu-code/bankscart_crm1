@@ -1,64 +1,77 @@
-// components/performance-metrics.tsx
+"use client"
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { BarChart3, TrendingUp, Target, AlertCircle } from "lucide-react"
+import { TrendingUp, TrendingDown, Minus } from "lucide-react"
 
 interface PerformanceMetricsProps {
-  totalLeads: number
-  convertedLeads: number
-  highPriorityLeads: number
+  userId: string
   conversionRate: number
+  successRate: number
+  avgCallDuration: number
 }
 
 export function PerformanceMetrics({ 
-  totalLeads, 
-  convertedLeads, 
-  highPriorityLeads, 
-  conversionRate 
+  conversionRate, 
+  successRate, 
+  avgCallDuration 
 }: PerformanceMetricsProps) {
   const metrics = [
     {
-      title: "Total Leads",
-      value: totalLeads,
-      icon: BarChart3,
-      color: "bg-blue-500"
+      label: "Conversion Rate",
+      value: `${conversionRate}%`,
+      trend: conversionRate > 15 ? "up" : conversionRate < 10 ? "down" : "neutral",
+      description: "Leads to successful calls"
     },
     {
-      title: "Converted",
-      value: convertedLeads,
-      icon: TrendingUp,
-      color: "bg-green-500"
+      label: "Success Rate", 
+      value: `${successRate}%`,
+      trend: successRate > 80 ? "up" : successRate < 60 ? "down" : "neutral",
+      description: "Task completion rate"
     },
     {
-      title: "Conversion Rate",
-      value: `${conversionRate.toFixed(1)}%`,
-      icon: Target,
-      color: "bg-purple-500"
-    },
-    {
-      title: "High Priority",
-      value: highPriorityLeads,
-      icon: AlertCircle,
-      color: "bg-red-500"
+      label: "Avg Call Duration",
+      value: `${avgCallDuration}m`,
+      trend: avgCallDuration > 5 ? "up" : avgCallDuration < 3 ? "down" : "neutral",
+      description: "Average call length"
     }
   ]
 
+  const getTrendIcon = (trend: string) => {
+    switch (trend) {
+      case "up":
+        return <TrendingUp className="h-4 w-4 text-green-600" />
+      case "down":
+        return <TrendingDown className="h-4 w-4 text-red-600" />
+      default:
+        return <Minus className="h-4 w-4 text-gray-600" />
+    }
+  }
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      {metrics.map((metric, index) => (
-        <Card key={index}>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">{metric.title}</p>
-                <p className="text-2xl font-bold">{metric.value}</p>
+    <Card className="border">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg">Performance Overview</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {metrics.map((metric, index) => (
+            <div key={index} className="text-center p-4 border rounded-lg bg-white">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                {getTrendIcon(metric.trend)}
+                <span className="text-2xl font-bold text-gray-900">
+                  {metric.value}
+                </span>
               </div>
-              <div className={`p-3 rounded-full ${metric.color} text-white`}>
-                <metric.icon className="h-6 w-6" />
+              <div className="text-sm font-medium text-gray-900 mb-1">
+                {metric.label}
+              </div>
+              <div className="text-xs text-gray-500">
+                {metric.description}
               </div>
             </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
