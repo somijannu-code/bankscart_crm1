@@ -1,7 +1,4 @@
-import { CallTrackingProvider } from "@/context/call-tracking-context"
-import { TopHeader } from "@/components/top-header"
-
-i followig code -- import type React from "react"
+import type React from "react"
 import { AuthGuard } from "@/components/auth-guard"
 import { TelecallerSidebar } from "@/components/telecaller-sidebar"
 import { CallTrackingProvider } from "@/context/call-tracking-context"
