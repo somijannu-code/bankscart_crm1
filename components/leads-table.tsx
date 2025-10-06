@@ -202,6 +202,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       'Login': 15,
       'contacted': 12,
       'follow_up': 10,
+      'nr':0,
       'new': 8,
       'Not_Interested': 2,
       'not_eligible': 1
@@ -1013,6 +1014,8 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                 <SelectItem value="Interested">Interested</SelectItem>
                 <SelectItem value="Documents_Sent">Documents Sent</SelectItem>
                 <SelectItem value="Login">Login</SelectItem>
+                <SelectItem value="nr">nr</SelectItem>
+                <SelectItem value="self_employed">self_employed</SelectItem>
                 <SelectItem value="Disbursed">Disbursed</SelectItem>
                 <SelectItem value="Not_Interested">Not Interested</SelectItem>
                 <SelectItem value="not_eligible">Not Eligible</SelectItem>
@@ -1220,6 +1223,8 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                     <SelectItem value="Interested">Interested</SelectItem>
                     <SelectItem value="Documents_Sent">Documents Sent</SelectItem>
                     <SelectItem value="Login">Login</SelectItem>
+                    <SelectItem value="nr">nr</SelectItem>
+                    <SelectItem value="self_employed">self_employed</SelectItem>
                     <SelectItem value="Disbursed">Disbursed</SelectItem>
                     <SelectItem value="Not_Interested">Not Interested</SelectItem>
                     <SelectItem value="not_eligible">Not Eligible</SelectItem>
@@ -1459,6 +1464,8 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                             <SelectItem value="Interested">Interested</SelectItem>
                             <SelectItem value="Documents_Sent">Documents Sent</SelectItem>
                             <SelectItem value="Login">Login</SelectItem>
+                            <SelectItem value="nr">nr</SelectItem>
+                            <SelectItem value="self_employed">self_employed</SelectItem>
                             <SelectItem value="Disbursed">Disbursed</SelectItem>
                             <SelectItem value="Not_Interested">Not Interested</SelectItem>
                             <SelectItem value="not_eligible">Not Eligible</SelectItem>
