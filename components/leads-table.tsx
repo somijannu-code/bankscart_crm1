@@ -115,6 +115,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     actions: true
   })
   const [currentPage, setCurrentPage] = useState(1)
+  // UPDATED: Initial page size to 20, but now changeable
   const [pageSize, setPageSize] = useState(20)
   const [selectedLeads, setSelectedLeads] = useState<string[]>([])
   
@@ -326,6 +327,8 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     return matchesSearch && matchesStatus && matchesPriority && 
            matchesAssignedTo && matchesSource && matchesScore && matchesTag
   }).sort((a, b) => {
+    // Note for large datasets: The entire filteredLeads array is sorted here.
+    // For 10,000+ leads, filtering and sorting should happen on the server/database.
     let aValue = a[sortField as keyof Lead]
     let bValue = b[sortField as keyof Lead]
     
@@ -348,6 +351,12 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     (currentPage - 1) * pageSize,
     currentPage * pageSize
   )
+  
+  // Handle page size change, resetting to page 1
+  const handlePageSizeChange = (value: string) => {
+    setPageSize(Number(value))
+    setCurrentPage(1)
+  }
 
   // Detect Duplicates
   const detectDuplicates = () => {
@@ -911,6 +920,11 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
 
   return (
     <div className="space-y-6">
+      {/* Note for scalability: For 10,000+ leads, filtering/sorting/pagination 
+      should be handled by the backend (server-side) to prevent performance issues 
+      from loading the entire dataset onto the client. The current implementation 
+      performs these operations client-side. */}
+      
       {/* Success/Error Messages */}
       {successMessage && (
         <Card className="border-green-500 bg-green-50">
@@ -1651,11 +1665,31 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         </CardContent>
       </Card>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, filteredLeads.length)} of {filteredLeads.length} leads
+      {/* Pagination & Page Size Selector */}
+      {totalPages > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-muted-foreground">
+              Leads per page:
+            </div>
+            {/* NEW: Page Size Selector */}
+            <Select 
+              value={String(pageSize)} 
+              onValueChange={handlePageSizeChange}
+            >
+              <SelectTrigger className="w-[80px] h-9">
+                <SelectValue placeholder="20" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="20">20</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="text-sm text-muted-foreground">
+              Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, filteredLeads.length)} of {filteredLeads.length} leads
+            </div>
           </div>
           <Pagination>
             <PaginationContent>
@@ -1665,6 +1699,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                   className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
                 />
               </PaginationItem>
+              {/* Pagination Links Logic */}
               {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
                 let pageNum
                 if (totalPages <= 5) {
@@ -1677,16 +1712,20 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                   pageNum = currentPage - 2 + i
                 }
                 
-                return (
-                  <PaginationItem key={pageNum}>
-                    <PaginationLink
-                      isActive={currentPage === pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
-                    >
-                      {pageNum}
-                    </PaginationLink>
-                  </PaginationItem>
-                )
+                // Only render if pageNum is valid
+                if (pageNum >= 1 && pageNum <= totalPages) {
+                  return (
+                    <PaginationItem key={pageNum}>
+                      <PaginationLink
+                        isActive={currentPage === pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                      >
+                        {pageNum}
+                      </PaginationLink>
+                    </PaginationItem>
+                  )
+                }
+                return null;
               })}
               <PaginationItem>
                 <PaginationNext 
