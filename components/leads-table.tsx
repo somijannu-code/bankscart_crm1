@@ -101,18 +101,13 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
     name: true,
     contact: true,
-    company: true,
     status: true,
     priority: true,
     score: true,
     created: true,
     lastContacted: true,
     loanAmount: true,
-    loanType: true,
-    source: true,
     assignedTo: true,
-    tags: true,
-    actions: true
   })
   const [currentPage, setCurrentPage] = useState(1)
   // UPDATED: Initial page size to 20, but now changeable
@@ -1432,8 +1427,15 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                     
                     {visibleColumns.name && (
                       <TableCell>
-                        <div className="font-medium">{getSafeValue(lead.name)}</div>
-                        <div className="text-xs text-muted-foreground">ID: {lead.id.slice(-8)}</div>
+                        {/* START: Added Link for Redirection */}
+                        <Link 
+                          href={`/admin/leads/${lead.id}`} 
+                          className="hover:text-blue-600 hover:underline cursor-pointer block"
+                        >
+                          <div className="font-medium">{getSafeValue(lead.name)}</div>
+                          <div className="text-xs text-muted-foreground">ID: {lead.id.slice(-8)}</div>
+                        </Link>
+                        {/* END: Added Link for Redirection */}
                       </TableCell>
                     )}
                     
@@ -1630,7 +1632,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem asChild>
-                                <Link href={`/leads/${lead.id}`}>
+                                <Link href={`/admin/leads/${lead.id}`}>
                                   <Eye className="h-4 w-4 mr-2" />
                                   View Details
                                 </Link>
@@ -1672,7 +1674,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
             <div className="text-sm text-muted-foreground">
               Leads per page:
             </div>
-            {/* NEW: Page Size Selector */}
+            {/* Page Size Selector */}
             <Select 
               value={String(pageSize)} 
               onValueChange={handlePageSizeChange}
@@ -1943,7 +1945,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                         </div>
                         <div className="flex gap-2">
                           <Button size="sm" variant="outline" asChild>
-                            <Link href={`/leads/${lead.id}`}>
+                            <Link href={`/admin/leads/${lead.id}`}>
                               <Eye className="h-4 w-4 mr-1" />
                               View
                             </Link>
