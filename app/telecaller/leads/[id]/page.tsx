@@ -4,21 +4,18 @@ import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { Phone, Mail, Calendar, MessageSquare, ArrowLeft, Clock, Send, Users, Loader2, UserCheck } from "lucide-react"
+import { Phone, Mail, Calendar, MessageSquare, ArrowLeft, Clock, Send, Loader2, UserCheck } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect, useCallback } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
-// RESTORED IMPORTS - Assuming these components exist in your project
+// Placeholder for custom components - restore actual paths if needed
 import { TimelineView } from "@/components/timeline-view"
 import { LeadNotes } from "@/components/lead-notes"
 import { LeadCallHistory } from "@/components/lead-call-history"
 import { FollowUpsList } from "@/components/follow-ups-list"
-// Note: Keeping status update inline for simplicity, not re-introducing LeadStatusUpdater
 
 // --- 1. CONSTANTS AND UTILITIES ---
 
@@ -79,7 +76,18 @@ const formatCurrency = (value: number | null) => {
     }).format(Number(value));
 };
 
-// --- 2. LEAD TRANSFER MODULE COMPONENT ---
+// Simple helper component for displaying details
+const DetailItem = ({ label, value, icon, valueClass = '' }: { label: string, value: React.ReactNode, icon?: React.ReactNode, valueClass?: string }) => (
+    <div className="flex flex-col space-y-1 p-2 bg-gray-50 rounded-lg">
+        <p className="text-xs font-medium text-gray-500">{label}</p>
+        <div className={`flex items-center gap-2 ${valueClass}`}>
+            {icon}
+            <span className="text-sm text-gray-800 break-words">{value}</span>
+        </div>
+    </div>
+);
+
+// --- 2. LEAD TRANSFER MODULE COMPONENT (NEW) ---
 
 interface LeadTransferModuleProps {
     lead: Lead;
@@ -101,7 +109,7 @@ const LeadTransferModule = ({ lead, onTransferSuccess }: LeadTransferModuleProps
             // Assuming the 'users' table has a 'role' column set to 'kyc-team'
             const { data, error } = await supabase
                 .from('users') 
-                .select('id, email, full_name') // Select necessary user info
+                .select('id, email, full_name')
                 .eq('role', 'kyc-team')
                 .limit(100);
 
@@ -143,15 +151,12 @@ const LeadTransferModule = ({ lead, onTransferSuccess }: LeadTransferModuleProps
         } else {
             // Success: notify parent and reset selection
             onTransferSuccess(selectedKycUserId);
-            setSelectedKycUserId(''); 
-            // Optional: You might want to add a toast notification here
         }
     }, [lead.id, selectedKycUserId, supabase, onTransferSuccess]);
 
     const isAlreadyTransferred = lead.status === STATUSES.TRANSFERRED_TO_KYC;
     const isButtonDisabled = isTransferring || isFetchingUsers || !selectedKycUserId || isAlreadyTransferred;
 
-    // Determine the current assigned KYC team member's name for display
     const currentKycAssignee = lead.kyc_assigned_to 
         ? kycUsers.find(u => u.id === lead.kyc_assigned_to)?.full_name || kycUsers.find(u => u.id === lead.kyc_assigned_to)?.email || lead.kyc_assigned_to.substring(0, 8) + '...'
         : null;
@@ -376,13 +381,13 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                 </div>
             </div>
 
-            {/* Main Content Grid */}
+            {/* Main Content Grid (Old Layout: 2/3 Left, 1/3 Right) */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                 {/* Left Column: Lead Details (2/3 width) */}
                 <div className="lg:col-span-2 space-y-6">
 
-                    {/* Personal and Contact Details */}
+                    {/* Personal and Contact Details Card */}
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-purple-700">
@@ -400,6 +405,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                             <DetailItem label="Lead Source" value={lead.source || 'N/A'} />
                             <DetailItem label="Priority" value={<Badge variant="secondary" className={`capitalize ${lead.priority === 'urgent' ? 'bg-red-500 text-white' : lead.priority === 'high' ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}>{lead.priority}</Badge>} />
                             <DetailItem label="Assigned Telecaller ID" value={lead.assigned_to ? lead.assigned_to.substring(0, 8) + '...' : 'Unassigned'} />
+                            {/* NEW KYC ASSIGNMENT COLUMN */}
                             <DetailItem label="Assigned KYC ID" value={lead.kyc_assigned_to ? lead.kyc_assigned_to.substring(0, 8) + '...' : 'None'} />
                         </CardContent>
                     </Card>
@@ -455,7 +461,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                 {/* Right Column: Status & Transfer (1/3 width) */}
                 <div className="lg:col-span-1 space-y-6">
                     
-                    {/* Status Update Component (Inline for controlled logic) */}
+                    {/* Status Update Component (Inline) */}
                     <Card className="shadow-lg border-2 border-purple-200">
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-xl text-purple-700">
@@ -504,7 +510,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                         </CardContent>
                     </Card>
 
-                    {/* KYC Lead Transfer Module: Show only when Login is Done */}
+                    {/* NEW: KYC Lead Transfer Module: Show only when Login is Done */}
                     {lead.status === STATUSES.LOGIN_DONE && (
                         <LeadTransferModule 
                             lead={lead} 
@@ -512,7 +518,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                         />
                     )}
                     
-                    {/* Confirmation Card: Show if already transferred */}
+                    {/* NEW: Confirmation Card: Show if already transferred */}
                     {lead.status === STATUSES.TRANSFERRED_TO_KYC && (
                         <Card className="shadow-md border-2 border-green-200 bg-green-50">
                             <CardHeader>
@@ -523,7 +529,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                             </CardHeader>
                             <CardContent>
                                 <p className="text-sm text-gray-700">
-                                    This lead has been successfully handed over to the KYC team and is now **view-only** for status updates.
+                                    This lead has been successfully handed over to the KYC team. Status is now **view-only** from this page.
                                 </p>
                             </CardContent>
                         </Card>
@@ -534,14 +540,3 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
         </div>
     )
 }
-
-// Simple helper component for displaying details
-const DetailItem = ({ label, value, icon, valueClass = '' }: { label: string, value: React.ReactNode, icon?: React.ReactNode, valueClass?: string }) => (
-    <div className="flex flex-col space-y-1 p-2 bg-gray-50 rounded-lg">
-        <p className="text-xs font-medium text-gray-500">{label}</p>
-        <div className={`flex items-center gap-2 ${valueClass}`}>
-            {icon}
-            <span className="text-sm text-gray-800 break-words">{value}</span>
-        </div>
-    </div>
-);
