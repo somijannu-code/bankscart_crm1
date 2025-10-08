@@ -5,7 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { 
   Search, Filter, ChevronDown, ChevronUp, MoreHorizontal, 
-  Loader2, RefreshCw, Eye, Hash, Users, Clock, CheckCircle, XCircle
+  Loader2, RefreshCw, Eye, Hash, Users, Clock, CheckCircle, XCircle, DollarSign
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,16 +15,19 @@ import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Card } from "@/components/ui/card";
 
-// CRITICAL CHANGE: Status is now included
+// Lead interface reflecting available columns for the table view
 interface Lead {
   id: string;
   name: string;
-  kyc_member_id: string;
-  status: string; // Assuming 'status' column is available
+  phone: string;
+  loan_amount: number | null;
+  status: string;
+  created_at: string;
 }
 
 interface KycLeadsTableProps {
     currentUserId: string;
+    initialStatus: string; // Used to capture status filter from URL (e.g., /kyc-team/leads?status=Underwriting)
 }
 
 // Define the available statuses for consistency
@@ -40,27 +43,35 @@ const STATUSES = {
 const getStatusBadge = (status: string) => {
     switch (status) {
         case STATUSES.LOGIN_DONE:
-            return <Badge variant="secondary" className="bg-blue-400 text-white hover:bg-blue-500"><Clock className="h-3 w-3 mr-1" /> Login Done</Badge>;
+            return <Badge className="bg-blue-400 text-white hover:bg-blue-500">Login Done</Badge>;
         case STATUSES.UNDERWRITING:
-            return <Badge variant="secondary" className="bg-amber-500 text-white hover:bg-amber-600"><Clock className="h-3 w-3 mr-1" /> Underwriting</Badge>;
+            return <Badge className="bg-amber-500 text-white hover:bg-amber-600">Underwriting</Badge>;
         case STATUSES.REJECTED:
-            return <Badge variant="secondary" className="bg-red-600 text-white hover:bg-red-700"><XCircle className="h-3 w-3 mr-1" /> Rejected</Badge>;
+            return <Badge className="bg-red-600 text-white hover:bg-red-700">Rejected</Badge>;
         case STATUSES.APPROVED:
-            return <Badge variant="secondary" className="bg-green-600 text-white hover:bg-green-700"><CheckCircle className="h-3 w-3 mr-1" /> Approved</Badge>;
+            return <Badge className="bg-green-600 text-white hover:bg-green-700">Approved</Badge>;
         case STATUSES.DISBURSED:
-            return <Badge variant="secondary" className="bg-purple-600 text-white hover:bg-purple-700"><CheckCircle className="h-3 w-3 mr-1" /> Disbursed</Badge>;
+            return <Badge className="bg-purple-600 text-white hover:bg-purple-700">Disbursed</Badge>;
         default:
             return <Badge variant="secondary">Unknown</Badge>;
     }
 };
 
-const PAGE_SIZE = 10;
+const formatCurrency = (value: number | null) => {
+    if (value === null || isNaN(Number(value))) return "N/A";
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0,
+    }).format(Number(value));
+};
 
-export default function KycLeadsTable({ currentUserId }: KycLeadsTableProps) {
+export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeadsTableProps) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all"); // New state for status filtering
+  // Initialize status filter from URL query param
+  const [statusFilter, setStatusFilter] = useState(initialStatus || "all"); 
 
   const supabase = createClient();
 
@@ -70,9 +81,10 @@ export default function KycLeadsTable({ currentUserId }: KycLeadsTableProps) {
     
     let query = supabase
       .from("leads")
-      .select("id, name, kyc_member_id, status") // CRITICAL: Now selecting 'status'
+      // CRITICAL: Selecting all relevant columns based on the full schema
+      .select("id, name, phone, loan_amount, status, created_at") 
       .eq("kyc_member_id", currentUserId)
-      .limit(1000); 
+      .order("created_at", { ascending: false }); // Using available 'created_at' column
 
     // Apply status filter to the database query
     if (statusFilter !== 'all') {
@@ -91,7 +103,6 @@ export default function KycLeadsTable({ currentUserId }: KycLeadsTableProps) {
 
   // 2. Real-time Listener and Initial Load
   useEffect(() => {
-    // Re-fetch data whenever the status filter changes
     fetchLeads(true); 
 
     const channel = supabase.channel(`kyc_leads_user_${currentUserId}`);
@@ -124,32 +135,23 @@ export default function KycLeadsTable({ currentUserId }: KycLeadsTableProps) {
         supabase.removeChannel(channel);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUserId, statusFilter]); // Added statusFilter to dependency array
+  }, [currentUserId, statusFilter]); 
 
-  // 3. Filtering Logic (Only by Search Term, status is handled in fetchLeads)
+  // 3. Filtering Logic (Client-side search)
   const filteredLeads = useMemo(() => {
-    let filtered = leads;
-
-    // A. Filtering by Search Term
-    if (searchTerm) {
-      const lowerCaseSearch = searchTerm.toLowerCase();
-      // Only search against the 'name' column
-      filtered = filtered.filter(
-        (lead) => lead.name.toLowerCase().includes(lowerCaseSearch)
-      );
-    }
-    // Note: No client-side status filtering needed as it's done in the fetchLeads query
+    if (!searchTerm) return leads;
     
-    return filtered;
+    const lowerCaseSearch = searchTerm.toLowerCase();
+    
+    return leads.filter(
+        (lead) => 
+            lead.name.toLowerCase().includes(lowerCaseSearch) ||
+            lead.phone.includes(lowerCaseSearch) ||
+            lead.id.toLowerCase().includes(lowerCaseSearch)
+    );
   }, [leads, searchTerm]);
 
-  // 4. Pagination calculation (simplified, showing all results)
-  const paginatedLeads = useMemo(() => {
-    const start = 0; 
-    const end = filteredLeads.length;
-    return filteredLeads.slice(start, end);
-  }, [filteredLeads]);
-
+  // 4. Pagination is removed for simplicity, displaying all results
 
   return (
     <div className="space-y-4">
@@ -158,7 +160,7 @@ export default function KycLeadsTable({ currentUserId }: KycLeadsTableProps) {
         <div className="flex items-center space-x-2 w-full sm:w-1/2">
           <Search className="h-5 w-5 text-gray-400" />
           <Input
-            placeholder="Search by Lead Name..."
+            placeholder="Search by Name, Phone, or ID..."
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
@@ -167,7 +169,7 @@ export default function KycLeadsTable({ currentUserId }: KycLeadsTableProps) {
           />
         </div>
         <div className="flex gap-4 items-center">
-            {/* New Status Filter Select */}
+            {/* Status Filter Select */}
             <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value)}>
                 <SelectTrigger className="w-[180px] text-sm">
                     <Filter className="h-4 w-4 mr-2 text-gray-500" />
@@ -193,40 +195,40 @@ export default function KycLeadsTable({ currentUserId }: KycLeadsTableProps) {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
-                <TableHead className="w-1/4">
-                  Lead Name
-                </TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="hidden md:table-cell">Lead ID</TableHead>
+                <TableHead className="min-w-[150px]">Lead Name</TableHead>
+                <TableHead>Phone</TableHead>
+                <TableHead className="hidden sm:table-cell">Loan Amount</TableHead>
+                <TableHead className="min-w-[140px]">Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading && leads.length === 0 ? (
+              {isLoading && filteredLeads.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="h-24 text-center">
-                    <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" />
+                  <TableCell colSpan={5} className="h-24 text-center">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto text-purple-500" />
                     <p className="mt-2 text-gray-600">Loading leads...</p>
                   </TableCell>
                 </TableRow>
-              ) : paginatedLeads.length === 0 ? (
+              ) : filteredLeads.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="h-24 text-center text-gray-500">
+                  <TableCell colSpan={5} className="h-24 text-center text-gray-500">
                     <Users className="w-6 h-6 mx-auto mb-2"/>
-                    No assigned leads found matching your criteria.
+                    No assigned leads found matching your filters.
                   </TableCell>
                 </TableRow>
               ) : (
-                paginatedLeads.map((lead) => (
-                  <TableRow key={lead.id}>
-                    <TableCell className="font-medium text-primary hover:underline w-1/4">
+                filteredLeads.map((lead) => (
+                  <TableRow key={lead.id} className="hover:bg-purple-50 transition-colors">
+                    <TableCell className="font-medium text-purple-700 hover:underline">
                       <Link href={`/kyc-team/${lead.id}`}>{lead.name}</Link>
+                      <p className="text-xs text-gray-500 mt-0.5">ID: {lead.id.substring(0, 8)}</p>
+                    </TableCell>
+                    <TableCell>{lead.phone}</TableCell>
+                    <TableCell className="hidden sm:table-cell font-semibold">
+                        {formatCurrency(lead.loan_amount)}
                     </TableCell>
                     <TableCell>{getStatusBadge(lead.status)}</TableCell>
-                    <TableCell className="hidden md:table-cell flex items-center gap-1">
-                        <Hash className="h-4 w-4 text-gray-500" />
-                        {lead.id.substring(0, 8)}...
-                    </TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -239,9 +241,10 @@ export default function KycLeadsTable({ currentUserId }: KycLeadsTableProps) {
                           <DropdownMenuItem asChild>
                             <Link href={`/kyc-team/${lead.id}`} className="flex items-center">
                                 <Eye className="h-4 w-4 mr-2" />
-                                View Details
+                                View KYC/Details
                             </Link>
                           </DropdownMenuItem>
+                          {/* Add other actions here */}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -254,7 +257,7 @@ export default function KycLeadsTable({ currentUserId }: KycLeadsTableProps) {
       </Card>
       
       <div className="text-center py-2 text-sm text-gray-600">
-        Displaying {paginatedLeads.length} leads.
+        Displaying {filteredLeads.length} leads.
       </div>
     </div>
   );
