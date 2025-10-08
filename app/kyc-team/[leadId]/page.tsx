@@ -7,12 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Phone, Mail, MapPin, Calendar, MessageSquare, ArrowLeft, Clock, Save, User, DollarSign, Loader2, RefreshCw, XCircle, CheckCircle } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Phone, Mail, MapPin, Calendar, MessageSquare, ArrowLeft, Clock, Save, User, DollarSign, Loader2, RefreshCw, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { toast } from 'react-hot-toast'; // Assuming a toast library is available for notifications
+// Assuming a toast library is available for notifications (like react-hot-toast)
 
 // --- 1. CONSTANTS AND UTILITIES ---
 
@@ -99,11 +100,12 @@ const LeadStatusUpdater = ({ leadId, currentStatus, onStatusUpdate }: LeadStatus
 
     const handleUpdate = useCallback(async () => {
         if (newStatus === currentStatus) {
-            // toast.error("Status is already set to this value.");
             return;
         }
 
         setIsUpdating(true);
+        // Note: For KYC users, we only allow updates to certain statuses. 
+        // We rely on RLS/Postgres policies to enforce which user can update which status.
         const { error } = await supabase
             .from('leads')
             .update({ status: newStatus, updated_at: new Date().toISOString() })
@@ -114,11 +116,9 @@ const LeadStatusUpdater = ({ leadId, currentStatus, onStatusUpdate }: LeadStatus
         if (error) {
             console.error("Error updating status:", error);
             // toast.error("Failed to update status. Please try again.");
-            // Revert state if update fails
             setNewStatus(currentStatus); 
         } else {
             // toast.success(`Status updated to ${newStatus}`);
-            // Inform parent component
             onStatusUpdate(newStatus); 
         }
     }, [newStatus, currentStatus, leadId, supabase, onStatusUpdate]);
@@ -189,7 +189,7 @@ interface LeadProfilePageProps {
   };
 }
 
-export default function LeadProfilePage({ params }: LeadProfilePageProps) {
+export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
   const router = useRouter();
   const leadId = params.id;
   const [lead, setLead] = useState<Lead | null>(null);
@@ -244,7 +244,7 @@ export default function LeadProfilePage({ params }: LeadProfilePageProps) {
         supabase.removeChannel(channel);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leadId]); // Depend on leadId only for setup
+  }, [leadId]); 
 
   const handleStatusUpdate = (newStatus: string) => {
       // Update the local state instantly after successful update from LeadStatusUpdater
@@ -267,7 +267,7 @@ export default function LeadProfilePage({ params }: LeadProfilePageProps) {
         <XCircle className="h-10 w-10 text-red-500 mx-auto" />
         <h1 className="text-2xl font-bold mt-4 text-red-700">Error Loading Lead</h1>
         <p className="text-gray-600 mt-2">{error || "The requested lead could not be found."}</p>
-        <Button onClick={() => router.push('/admin/leads')} className="mt-4">
+        <Button onClick={() => router.push('/kyc-team/leads')} className="mt-4 bg-purple-600 hover:bg-purple-700">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Leads List
         </Button>
@@ -358,7 +358,7 @@ export default function LeadProfilePage({ params }: LeadProfilePageProps) {
                 onStatusUpdate={handleStatusUpdate}
             />
 
-            {/* Activity Tabs (Simplified stubs based on reference file structure) */}
+            {/* Activity Tabs (Simplified stubs) */}
             <Tabs defaultValue="timeline" className="w-full">
                 <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="timeline">Timeline</TabsTrigger>
@@ -381,7 +381,6 @@ export default function LeadProfilePage({ params }: LeadProfilePageProps) {
                                     <p className="font-semibold">Lead created</p>
                                     <p className="text-xs">{new Date(lead.created_at).toLocaleString()}</p>
                                 </div>
-                                <p className="text-center text-xs pt-2">More timeline events require integration with separate logs (e.g., call_logs, notes table).</p>
                             </div>
                         </CardContent>
                     </Card>
@@ -398,10 +397,10 @@ export default function LeadProfilePage({ params }: LeadProfilePageProps) {
                         </CardHeader>
                         <CardContent>
                             <p className="text-sm text-gray-500">
-                                Integration required for LeadNotes, LeadCallHistory, and FollowUpsList components using `lead.id`.
+                                Feature coming soon: Add notes, call logs, and follow-ups.
                             </p>
                             <Textarea placeholder="Add a quick note..." className="mt-3" rows={3} />
-                            <Button size="sm" className="mt-2 w-full">Save Note</Button>
+                            <Button size="sm" className="mt-2 w-full bg-purple-600 hover:bg-purple-700">Save Note</Button>
                         </CardContent>
                     </Card>
                 </TabsContent>
