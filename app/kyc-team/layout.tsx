@@ -4,7 +4,7 @@ import KycSidebar from "@/components/kyc-team/KycSidebar";
 
 // Define the structure for the user's profile data
 interface UserProfile {
-  name: string | null; // CRITICAL CHANGE: Assuming 'name' column based on your feedback
+  full_name: string | null; // CRITICAL CHANGE: Assuming 'name' column based on your feedback
   role: string | null; 
 }
 
@@ -21,7 +21,7 @@ export default async function KycTeamLayout({ children }: { children: React.Reac
   // FIX: Switched from 'full_name' to 'name' to align with likely schema
   const { data: profile, error } = await supabase
     .from('users')
-    .select('name, role') // Only selecting 'name' and 'role'
+    .select('full_name, role') // Only selecting 'name' and 'role'
     .eq('id', user.id)
     .single();
     
@@ -41,7 +41,7 @@ export default async function KycTeamLayout({ children }: { children: React.Reac
   }
 
   const userProfile: UserProfile = {
-    name: profile.name, // Accessing 'name'
+    full_name: profile.full_name, // Accessing 'name'
     role: profile.role,
   };
 
