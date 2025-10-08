@@ -8,19 +8,17 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { Phone, Mail, MapPin, Calendar, MessageSquare, ArrowLeft, Clock, Save, Send, Users, Loader2, DollarSign, UserCheck } from "lucide-react"
-import Link from "next/link"
+import { Phone, Mail, Calendar, MessageSquare, ArrowLeft, Clock, Send, Users, Loader2, UserCheck } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect, useCallback } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
-// Assuming these components exist based on your original file's imports
-// import { TimelineView } from "@/components/timeline-view"
-// import { LeadNotes } from "@/components/lead-notes"
-// import { LeadCallHistory } from "@/components/lead-call-history"
-// import { FollowUpsList } from "@/components/follow-ups-list"
-// import { LeadStatusUpdater } from "@/components/lead-status-updater" 
-// (Replacing LeadStatusUpdater with an inline status management for simplicity/control)
+// RESTORED IMPORTS - Assuming these components exist in your project
+import { TimelineView } from "@/components/timeline-view"
+import { LeadNotes } from "@/components/lead-notes"
+import { LeadCallHistory } from "@/components/lead-call-history"
+import { FollowUpsList } from "@/components/follow-ups-list"
+// Note: Keeping status update inline for simplicity, not re-introducing LeadStatusUpdater
 
 // --- 1. CONSTANTS AND UTILITIES ---
 
@@ -39,7 +37,6 @@ const STATUS_OPTIONS = Object.values(STATUSES);
 interface User {
     id: string;
     email: string;
-    // Assuming a profile table or similar stores the full name, we'll use email as fallback
     full_name: string | null; 
 }
 
@@ -101,7 +98,7 @@ const LeadTransferModule = ({ lead, onTransferSuccess }: LeadTransferModuleProps
     useEffect(() => {
         const fetchKycUsers = async () => {
             setIsFetchingUsers(true);
-            // Assuming there is a 'users' table with a 'role' column set to 'kyc-team'
+            // Assuming the 'users' table has a 'role' column set to 'kyc-team'
             const { data, error } = await supabase
                 .from('users') 
                 .select('id, email, full_name') // Select necessary user info
@@ -146,15 +143,15 @@ const LeadTransferModule = ({ lead, onTransferSuccess }: LeadTransferModuleProps
         } else {
             // Success: notify parent and reset selection
             onTransferSuccess(selectedKycUserId);
-            setSelectedKycUserId(''); // Clear selection after success
-            // toast.success(`Lead successfully transferred to KYC Team member.`);
+            setSelectedKycUserId(''); 
+            // Optional: You might want to add a toast notification here
         }
     }, [lead.id, selectedKycUserId, supabase, onTransferSuccess]);
 
     const isAlreadyTransferred = lead.status === STATUSES.TRANSFERRED_TO_KYC;
     const isButtonDisabled = isTransferring || isFetchingUsers || !selectedKycUserId || isAlreadyTransferred;
 
-    // Determine the current assigned KYC team member's name
+    // Determine the current assigned KYC team member's name for display
     const currentKycAssignee = lead.kyc_assigned_to 
         ? kycUsers.find(u => u.id === lead.kyc_assigned_to)?.full_name || kycUsers.find(u => u.id === lead.kyc_assigned_to)?.email || lead.kyc_assigned_to.substring(0, 8) + '...'
         : null;
@@ -241,13 +238,14 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
     const leadId = params.id
     const supabase = createClient()
     
-    // State management for lead and user (assuming user is required for components like LeadNotes)
+    // State management for lead and user 
     const [lead, setLead] = useState<Lead | null>(null)
     const [user, setUser] = useState<any>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
     
-    // Stubs for your imported components' data
+    // Placeholder for timeline data (TimelineView expects this)
     const [timelineData, setTimelineData] = useState<any[]>([]) 
 
     // Fetch Lead Data
@@ -259,7 +257,6 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
         const { data: userData, error: userError } = await supabase.auth.getUser()
         if (userError) {
             console.error('User fetch error:', userError)
-            // Continue loading, but user info might be incomplete
         }
         setUser(userData?.user)
         
@@ -280,7 +277,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
             setLead(null)
         } else {
             setLead(leadData as Lead)
-            // Placeholder for timeline data simulation
+            // Example timeline data entry
             setTimelineData([
                 { id: 1, type: 'status_change', message: `Lead created as ${leadData.status}`, timestamp: leadData.created_at },
             ])
@@ -292,7 +289,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
     useEffect(() => {
         fetchData()
         
-        // Setup Real-time Listener for the specific lead
+        // Setup Real-time Listener for the specific lead to keep the view updated
         const channel = supabase.channel(`lead_${leadId}_changes`);
 
         const subscription = channel
@@ -320,6 +317,26 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
             kyc_assigned_to: kycUserId 
         } : null));
     };
+
+    const handleStatusUpdate = useCallback(async (newStatus: string) => {
+        if (!lead || newStatus === lead.status) return;
+        
+        setIsUpdatingStatus(true);
+        
+        const { error } = await supabase
+            .from('leads')
+            .update({ status: newStatus, updated_at: new Date().toISOString() })
+            .eq('id', lead.id);
+
+        setIsUpdatingStatus(false);
+
+        if (error) {
+            console.error('Error updating status:', error);
+            // Optional: Show error to user
+        }
+        // Real-time listener handles state update on success
+    }, [lead, supabase]);
+
 
     if (loading) {
         return (
@@ -400,8 +417,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                             <Card>
                                 <CardHeader><CardTitle>Activity Timeline</CardTitle></CardHeader>
                                 <CardContent>
-                                    {/* <TimelineView data={timelineData} /> */}
-                                    <p className="text-sm text-gray-500">Timeline component integration goes here.</p>
+                                    <TimelineView data={timelineData} /> 
                                 </CardContent>
                             </Card>
                         </TabsContent>
@@ -410,10 +426,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                             <Card>
                                 <CardHeader><CardTitle className="flex items-center gap-2"><MessageSquare className="h-5 w-5" /> Notes & Comments</CardTitle></CardHeader>
                                 <CardContent>
-                                    {/* <LeadNotes leadId={lead.id} userId={user?.id} /> */}
-                                    <p className="text-sm text-gray-500">LeadNotes component integration goes here.</p>
-                                    <Textarea placeholder="Add a quick note..." className="mt-3" rows={3} />
-                                    <Button size="sm" className="mt-2 w-full">Save Note</Button>
+                                    <LeadNotes leadId={lead.id} userId={user?.id} />
                                 </CardContent>
                             </Card>
                         </TabsContent>
@@ -422,8 +435,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                             <Card>
                                 <CardHeader><CardTitle className="flex items-center gap-2"><Phone className="h-5 w-5" /> Call History</CardTitle></CardHeader>
                                 <CardContent>
-                                    {/* <LeadCallHistory leadId={lead.id} userId={user?.id} /> */}
-                                    <p className="text-sm text-gray-500">LeadCallHistory component integration goes here.</p>
+                                    <LeadCallHistory leadId={lead.id} userId={user?.id} />
                                 </CardContent>
                             </Card>
                         </TabsContent>
@@ -432,8 +444,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                             <Card>
                                 <CardHeader><CardTitle className="flex items-center gap-2"><Calendar className="h-5 w-5" /> Follow-ups</CardTitle></CardHeader>
                                 <CardContent>
-                                    {/* <FollowUpsList leadId={lead.id} /> */}
-                                    <p className="text-sm text-gray-500">FollowUpsList component integration goes here.</p>
+                                    <FollowUpsList leadId={lead.id} />
                                 </CardContent>
                             </Card>
                         </TabsContent>
@@ -444,7 +455,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                 {/* Right Column: Status & Transfer (1/3 width) */}
                 <div className="lg:col-span-1 space-y-6">
                     
-                    {/* Status Update Component (Placeholder/Inline) */}
+                    {/* Status Update Component (Inline for controlled logic) */}
                     <Card className="shadow-lg border-2 border-purple-200">
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-xl text-purple-700">
@@ -459,31 +470,41 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="status-select">Set New Status:</Label>
-                                <Select value={lead.status} onValueChange={(newStatus) => { 
-                                    // Placeholder for actual status update logic
-                                    console.log('Status update triggered:', newStatus);
-                                    setLead(prev => (prev ? { ...prev, status: newStatus } : null)); 
-                                    // In a real app, this would trigger LeadStatusUpdater logic
-                                }}>
+                                <Select 
+                                    value={lead.status} 
+                                    onValueChange={handleStatusUpdate}
+                                    disabled={isUpdatingStatus}
+                                >
                                     <SelectTrigger id="status-select" className="w-full">
                                         <SelectValue placeholder="Select a new status" />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {STATUS_OPTIONS.map(status => (
-                                            <SelectItem key={status} value={status}>
+                                            <SelectItem key={status} value={status} className={status === lead.status ? "font-bold bg-gray-100" : ""}>
                                                 {status}
                                             </SelectItem>
                                         ))}
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <Button className="w-full bg-purple-600 hover:bg-purple-700 transition-colors" disabled>
-                                Save Status (Functional Component Missing)
+                            <Button 
+                                className="w-full bg-purple-600 hover:bg-purple-700 transition-colors" 
+                                disabled={isUpdatingStatus || lead.status === STATUSES.TRANSFERRED_TO_KYC}
+                                onClick={() => handleStatusUpdate(lead.status)} // Trigger update on current selection
+                            >
+                                {isUpdatingStatus ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                        Saving...
+                                    </>
+                                ) : (
+                                    "Save Status"
+                                )}
                             </Button>
                         </CardContent>
                     </Card>
 
-                    {/* NEW: Lead Transfer Module */}
+                    {/* KYC Lead Transfer Module: Show only when Login is Done */}
                     {lead.status === STATUSES.LOGIN_DONE && (
                         <LeadTransferModule 
                             lead={lead} 
@@ -491,7 +512,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                         />
                     )}
                     
-                    {/* Display current KYC assignment status if already transferred */}
+                    {/* Confirmation Card: Show if already transferred */}
                     {lead.status === STATUSES.TRANSFERRED_TO_KYC && (
                         <Card className="shadow-md border-2 border-green-200 bg-green-50">
                             <CardHeader>
@@ -502,7 +523,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                             </CardHeader>
                             <CardContent>
                                 <p className="text-sm text-gray-700">
-                                    This lead has been successfully handed over to the KYC team.
+                                    This lead has been successfully handed over to the KYC team and is now **view-only** for status updates.
                                 </p>
                             </CardContent>
                         </Card>
