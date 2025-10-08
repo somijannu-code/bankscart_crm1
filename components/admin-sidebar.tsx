@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { LogoutButton } from "@/components/logout-button"
-import { LayoutDashboard, Users, UserPlus, FileSpreadsheet, BarChart3, Settings, MessageCircle, Calendar, FileText, ChevronLeft, ChevronRight } from "lucide-react"
+import { LayoutDashboard, Users, UserPlus, FileSpreadsheet, BarChart3, Settings, MessageCircle, Calendar, FileText, ChevronLeft, ChevronRight, IndianRupee } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -18,6 +18,8 @@ const navigation = [
   { name: "Reports", href: "/admin/reports", icon: BarChart3 },
   { name: "Team Chat", href: "/admin/chat", icon: MessageCircle },
   { name: "Settings", href: "/admin/settings", icon: Settings },
+  { name: "Disbursed Data", href: "/admin/disbursement-report", icon: IndianRupee },
+
 ]
 
 export function AdminSidebar() {
