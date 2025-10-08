@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getKycTeamMembers } from "@/lib/utils";
+import { getKycTeamMembers } from "@/lib/kyc-utils"; // UPDATED IMPORT PATH
 
 export async function GET() {
   try {
