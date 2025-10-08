@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getKycTeamMembers } from "@/lib/db-utils";
+import { getKycTeamMembers } from "@/lib/utils";
 
 export async function GET() {
   try {
