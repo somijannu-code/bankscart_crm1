@@ -6,10 +6,12 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Phone, Mail, Calendar, MessageSquare, ArrowLeft, Clock, Send, Loader2, UserCheck } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Phone, Mail, Calendar, MessageSquare, ArrowLeft, Clock, Send, Loader2, UserCheck, Save } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect, useCallback } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useToast } from "@/components/ui/use-toast" // Assuming you have a toast library
 
 // Placeholder for custom components - restore actual paths if needed
 import { TimelineView } from "@/components/timeline-view"
@@ -29,6 +31,7 @@ const STATUSES = {
     TRANSFERRED_TO_KYC: "Transferred to KYC", // New Status for Handover
 } as const;
 
+const PRIORITY_OPTIONS = ['low', 'medium', 'high', 'urgent'];
 const STATUS_OPTIONS = Object.values(STATUSES);
 
 interface User {
@@ -46,11 +49,11 @@ interface Lead {
   designation: string | null
   source: string | null
   status: string
-  priority: string
+  priority: 'low' | 'medium' | 'high' | 'urgent' // Enforce priority type
   created_at: string
   updated_at: string
   assigned_to: string | null // Telecaller assignment
-  kyc_assigned_to: string | null // NEW: KYC Team assignment
+  kyc_assigned_to: string | null // KYC Team assignment
   loan_amount: number | null;
   loan_type: string | null;
 }
@@ -76,7 +79,7 @@ const formatCurrency = (value: number | null) => {
     }).format(Number(value));
 };
 
-// Simple helper component for displaying details
+// Simple helper component for displaying read-only details
 const DetailItem = ({ label, value, icon, valueClass = '' }: { label: string, value: React.ReactNode, icon?: React.ReactNode, valueClass?: string }) => (
     <div className="flex flex-col space-y-1 p-2 bg-gray-50 rounded-lg">
         <p className="text-xs font-medium text-gray-500">{label}</p>
@@ -87,7 +90,7 @@ const DetailItem = ({ label, value, icon, valueClass = '' }: { label: string, va
     </div>
 );
 
-// --- 2. LEAD TRANSFER MODULE COMPONENT (NEW) ---
+// --- 2. LEAD TRANSFER MODULE COMPONENT ---
 
 interface LeadTransferModuleProps {
     lead: Lead;
@@ -96,6 +99,7 @@ interface LeadTransferModuleProps {
 
 const LeadTransferModule = ({ lead, onTransferSuccess }: LeadTransferModuleProps) => {
     const supabase = createClient();
+    const { toast } = useToast();
     const [kycUsers, setKycUsers] = useState<User[]>([]);
     const [selectedKycUserId, setSelectedKycUserId] = useState<string>('');
     const [isFetchingUsers, setIsFetchingUsers] = useState(true);
@@ -148,11 +152,20 @@ const LeadTransferModule = ({ lead, onTransferSuccess }: LeadTransferModuleProps
         if (error) {
             console.error("Error transferring lead:", error);
             setTransferError("Failed to transfer lead. Check permissions.");
+            toast({
+                title: "Transfer Failed",
+                description: "Could not transfer lead. Please try again.",
+                variant: "destructive",
+            });
         } else {
-            // Success: notify parent and reset selection
             onTransferSuccess(selectedKycUserId);
+            toast({
+                title: "Transfer Successful",
+                description: `Lead transferred to KYC team member.`,
+                className: "bg-indigo-500 text-white",
+            });
         }
-    }, [lead.id, selectedKycUserId, supabase, onTransferSuccess]);
+    }, [lead.id, selectedKycUserId, supabase, onTransferSuccess, toast]);
 
     const isAlreadyTransferred = lead.status === STATUSES.TRANSFERRED_TO_KYC;
     const isButtonDisabled = isTransferring || isFetchingUsers || !selectedKycUserId || isAlreadyTransferred;
@@ -242,20 +255,23 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
     const router = useRouter()
     const leadId = params.id
     const supabase = createClient()
+    const { toast } = useToast();
     
     // State management for lead and user 
     const [lead, setLead] = useState<Lead | null>(null)
+    const [editableLeadData, setEditableLeadData] = useState<Partial<Lead>>({})
     const [user, setUser] = useState<any>(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    const [isSavingDetails, setIsSavingDetails] = useState(false);
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
     
     // Placeholder for timeline data (TimelineView expects this)
     const [timelineData, setTimelineData] = useState<any[]>([]) 
 
     // Fetch Lead Data
-    const fetchData = useCallback(async () => {
-        setLoading(true)
+    const fetchData = useCallback(async (initialLoad = true) => {
+        if (initialLoad) setLoading(true)
         setError(null)
         
         // Fetch current user details
@@ -280,19 +296,23 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
             console.error('Lead fetch error:', leadError)
             setError(leadError.message)
             setLead(null)
+            setEditableLeadData({})
         } else {
-            setLead(leadData as Lead)
+            const lead = leadData as Lead
+            setLead(lead)
+            // Initialize editable data with fetched data
+            setEditableLeadData(lead)
             // Example timeline data entry
             setTimelineData([
-                { id: 1, type: 'status_change', message: `Lead created as ${leadData.status}`, timestamp: leadData.created_at },
+                { id: 1, type: 'status_change', message: `Lead created as ${lead.status}`, timestamp: lead.created_at },
             ])
         }
         
-        setLoading(false)
+        if (initialLoad) setLoading(false)
     }, [leadId, supabase])
 
     useEffect(() => {
-        fetchData()
+        fetchData(true)
         
         // Setup Real-time Listener for the specific lead to keep the view updated
         const channel = supabase.channel(`lead_${leadId}_changes`);
@@ -303,7 +323,12 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
             { event: 'UPDATE', schema: 'public', table: 'leads', filter: `id=eq.${leadId}` },
             (payload) => {
               console.log("Real-time update received for lead:", payload.new);
-              setLead(prev => ({ ...(prev as Lead), ...(payload.new as Lead) }));
+              const updatedLead = payload.new as Lead
+              setLead(updatedLead);
+              // Only update editable state if we aren't currently editing (to prevent overriding unsaved changes)
+              if (!isSavingDetails) {
+                 setEditableLeadData(updatedLead);
+              }
             }
           )
           .subscribe();
@@ -314,13 +339,71 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [leadId]);
 
+
+    // Handle input changes for editable fields
+    const handleInputChange = useCallback((field: keyof Lead, value: string | number | null) => {
+        setEditableLeadData(prev => ({
+            ...prev,
+            [field]: value
+        }))
+    }, []);
+
+    // Handle Lead Detail Update (The SAVE function)
+    const handleUpdateDetails = useCallback(async () => {
+        if (!editableLeadData.id) return;
+
+        setIsSavingDetails(true);
+        const { 
+            name, email, phone, company, designation, priority, 
+            loan_amount, loan_type 
+        } = editableLeadData;
+
+        // Prepare the payload (ensure loan_amount is a number or null)
+        const payload = {
+            name, 
+            email, 
+            phone, 
+            company, 
+            designation, 
+            priority,
+            loan_amount: loan_amount ? Number(loan_amount) : null, // Convert to number
+            loan_type,
+            updated_at: new Date().toISOString()
+        }
+
+        const { error } = await supabase
+            .from('leads')
+            .update(payload)
+            .eq('id', editableLeadData.id);
+
+        setIsSavingDetails(false);
+
+        if (error) {
+            console.error('Error updating lead details:', error);
+            toast({
+                title: "Update Failed",
+                description: `Error saving details: ${error.message}`,
+                variant: "destructive",
+            });
+        } else {
+            // Update successful, refetch/rely on real-time listener for full state refresh
+            toast({
+                title: "Details Saved",
+                description: "Lead information updated successfully.",
+            });
+        }
+    }, [editableLeadData, supabase, toast]);
+
+
     const handleTransferSuccess = (kycUserId: string) => {
         // Optimistically update local state after successful DB operation
-        setLead(prev => (prev ? { 
-            ...prev, 
+        const newLead = { 
+            ...(lead as Lead), 
             status: STATUSES.TRANSFERRED_TO_KYC, 
             kyc_assigned_to: kycUserId 
-        } : null));
+        }
+        setLead(newLead);
+        setEditableLeadData(newLead);
     };
 
     const handleStatusUpdate = useCallback(async (newStatus: string) => {
@@ -337,10 +420,14 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
 
         if (error) {
             console.error('Error updating status:', error);
-            // Optional: Show error to user
+            toast({
+                title: "Status Update Failed",
+                description: "Could not update status. Please try again.",
+                variant: "destructive",
+            });
         }
         // Real-time listener handles state update on success
-    }, [lead, supabase]);
+    }, [lead, supabase, toast]);
 
 
     if (loading) {
@@ -365,6 +452,29 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
         )
     }
 
+    const isTransferred = lead.status === STATUSES.TRANSFERRED_TO_KYC;
+    const isSaveDisabled = isSavingDetails || isTransferred;
+    const saveButtonColor = isSaveDisabled ? 'bg-gray-400' : 'bg-purple-600 hover:bg-purple-700';
+    
+    // Helper for rendering editable fields
+    const EditableDetailInput = ({ field, label, type = 'text', icon }: { field: keyof Lead, label: string, type?: 'text' | 'email' | 'tel' | 'number', icon: React.ReactNode }) => (
+        <div className="space-y-1">
+            <Label htmlFor={field as string} className="text-sm font-medium text-gray-700 flex items-center gap-1">
+                {icon}
+                {label}
+            </Label>
+            <Input
+                id={field as string}
+                type={type}
+                value={editableLeadData[field] as string || ''}
+                onChange={(e) => handleInputChange(field, type === 'number' ? e.target.valueAsNumber : e.target.value)}
+                className="bg-white"
+                disabled={isTransferred || isSavingDetails}
+            />
+        </div>
+    );
+
+
     return (
         <div className="space-y-6 pb-8">
             {/* Header and Quick Status */}
@@ -387,25 +497,78 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                 {/* Left Column: Lead Details (2/3 width) */}
                 <div className="lg:col-span-2 space-y-6">
 
-                    {/* Personal and Contact Details Card */}
-                    <Card>
-                        <CardHeader>
+                    {/* Editable Details Card */}
+                    <Card className="shadow-lg border-2 border-purple-100">
+                        <CardHeader className="flex flex-row items-center justify-between">
                             <CardTitle className="flex items-center gap-2 text-purple-700">
                                 <UserCheck className="h-5 w-5" />
-                                Basic & Loan Information
+                                Editable Lead Information
                             </CardTitle>
+                            <Button 
+                                onClick={handleUpdateDetails} 
+                                disabled={isSaveDisabled}
+                                className={saveButtonColor}
+                            >
+                                {isSavingDetails ? (
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                ) : (
+                                    <Save className="h-4 w-4 mr-2" />
+                                )}
+                                {isSavingDetails ? 'Saving...' : 'Save Details'}
+                            </Button>
                         </CardHeader>
-                        <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <DetailItem icon={<Phone className="h-4 w-4 text-gray-500" />} label="Phone" value={lead.phone} />
-                            <DetailItem icon={<Mail className="h-4 w-4 text-gray-500" />} label="Email" value={lead.email || 'N/A'} />
-                            <DetailItem label="Loan Amount" value={formatCurrency(lead.loan_amount)} valueClass="font-bold text-lg text-green-700" />
-                            <DetailItem label="Loan Type" value={lead.loan_type || 'N/A'} />
-                            <DetailItem label="Company" value={lead.company || 'N/A'} />
-                            <DetailItem label="Designation" value={lead.designation || 'N/A'} />
+                        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {/* Editable Fields */}
+                            <EditableDetailInput field="name" label="Full Name" icon={<UserCheck className="h-4 w-4 text-gray-500" />} />
+                            <EditableDetailInput field="phone" label="Phone" type="tel" icon={<Phone className="h-4 w-4 text-gray-500" />} />
+                            <EditableDetailInput field="email" label="Email" type="email" icon={<Mail className="h-4 w-4 text-gray-500" />} />
+                            
+                            <EditableDetailInput field="company" label="Company" icon={<UserCheck className="h-4 w-4 text-gray-500" />} />
+                            <EditableDetailInput field="designation" label="Designation" icon={<UserCheck className="h-4 w-4 text-gray-500" />} />
+                            
+                            {/* Editable Loan/Priority Fields */}
+                            <div className="space-y-1">
+                                <Label htmlFor="loan_amount" className="text-sm font-medium text-gray-700 flex items-center gap-1">
+                                    <Badge className="h-4 w-4 text-gray-500" />
+                                    Loan Amount (INR)
+                                </Label>
+                                <Input
+                                    id="loan_amount"
+                                    type="number"
+                                    value={editableLeadData.loan_amount || ''}
+                                    onChange={(e) => handleInputChange('loan_amount', e.target.valueAsNumber)}
+                                    className="bg-white"
+                                    disabled={isTransferred || isSavingDetails}
+                                />
+                            </div>
+
+                            <EditableDetailInput field="loan_type" label="Loan Type" icon={<Badge className="h-4 w-4 text-gray-500" />} />
+                            
+                            {/* Priority Select */}
+                            <div className="space-y-1">
+                                <Label htmlFor="priority" className="text-sm font-medium text-gray-700">Priority</Label>
+                                <Select 
+                                    value={editableLeadData.priority || 'medium'} 
+                                    onValueChange={(value: 'low' | 'medium' | 'high' | 'urgent') => handleInputChange('priority', value)}
+                                    disabled={isTransferred || isSavingDetails}
+                                >
+                                    <SelectTrigger id="priority" className="w-full bg-white">
+                                        <SelectValue placeholder="Select Priority" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {PRIORITY_OPTIONS.map(p => (
+                                            <SelectItem key={p} value={p} className={`capitalize ${p === 'urgent' ? 'text-red-600 font-semibold' : ''}`}>
+                                                {p}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {/* Read-Only Fields */}
                             <DetailItem label="Lead Source" value={lead.source || 'N/A'} />
-                            <DetailItem label="Priority" value={<Badge variant="secondary" className={`capitalize ${lead.priority === 'urgent' ? 'bg-red-500 text-white' : lead.priority === 'high' ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}>{lead.priority}</Badge>} />
                             <DetailItem label="Assigned Telecaller ID" value={lead.assigned_to ? lead.assigned_to.substring(0, 8) + '...' : 'Unassigned'} />
-                            {/* NEW KYC ASSIGNMENT COLUMN */}
+                            {/* NEW KYC ASSIGNMENT COLUMN (Read-only) */}
                             <DetailItem label="Assigned KYC ID" value={lead.kyc_assigned_to ? lead.kyc_assigned_to.substring(0, 8) + '...' : 'None'} />
                         </CardContent>
                     </Card>
@@ -501,7 +664,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                                 {isUpdatingStatus ? (
                                     <>
                                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                        Saving...
+                                        Saving Status...
                                     </>
                                 ) : (
                                     "Save Status"
@@ -510,7 +673,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                         </CardContent>
                     </Card>
 
-                    {/* NEW: KYC Lead Transfer Module: Show only when Login is Done */}
+                    {/* KYC Lead Transfer Module: Show only when Login is Done */}
                     {lead.status === STATUSES.LOGIN_DONE && (
                         <LeadTransferModule 
                             lead={lead} 
@@ -518,7 +681,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                         />
                     )}
                     
-                    {/* NEW: Confirmation Card: Show if already transferred */}
+                    {/* Confirmation Card: Show if already transferred */}
                     {lead.status === STATUSES.TRANSFERRED_TO_KYC && (
                         <Card className="shadow-md border-2 border-green-200 bg-green-50">
                             <CardHeader>
@@ -529,7 +692,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                             </CardHeader>
                             <CardContent>
                                 <p className="text-sm text-gray-700">
-                                    This lead has been successfully handed over to the KYC team. Status is now **view-only** from this page.
+                                    This lead has been successfully handed over to the KYC team.
                                 </p>
                             </CardContent>
                         </Card>
