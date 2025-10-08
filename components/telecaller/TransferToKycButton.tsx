@@ -9,12 +9,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Loader2, Send, CheckCircle2, Users } from "lucide-react";
-import { KycTeamMember } from "@/lib/db-utils";
-// import { toast } from "sonner"; // Assuming you have a toast library installed
+import { KycTeamMember } from "@/lib/kyc-utils"; // UPDATED IMPORT PATH
+import { useRouter } from "next/navigation"; 
+// import { toast } from "sonner"; 
 
 interface TransferToKycButtonProps {
   leadId: string;
-  // Function to refresh the leads table or redirect after transfer
   onTransferSuccess: () => void; 
 }
 
@@ -34,7 +34,7 @@ export function TransferToKycButton({ leadId, onTransferSuccess }: TransferToKyc
             const data = await res.json();
             setKycMembers(data);
         } else {
-            // console.error("Failed to fetch KYC team members");
+            console.error("Failed to fetch KYC team members");
             // toast.error("Failed to load KYC team members.");
         }
         setIsLoading(false);
@@ -58,11 +58,12 @@ export function TransferToKycButton({ leadId, onTransferSuccess }: TransferToKyc
       });
 
       if (!response.ok) {
-        throw new Error("Transfer failed. Please try team member again.");
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Transfer failed.");
       }
 
       // toast.success("Lead successfully transferred to KYC team!");
-      onTransferSuccess(); // Refresh or navigate away
+      onTransferSuccess(); 
       setIsOpen(false);
     } catch (error) {
       // toast.error("Transfer failed. Please try again.");
