@@ -5,7 +5,7 @@ import KycSidebar from "@/components/kyc-team/KycSidebar";
 // Define the structure for the user's profile data
 interface UserProfile {
   full_name: string | null;
-  role: string;
+  role: string | null; // role can be null if profile fetch failed
 }
 
 export default async function KycTeamLayout({ children }: { children: React.ReactNode }) {
@@ -13,20 +13,27 @@ export default async function KycTeamLayout({ children }: { children: React.Reac
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
+    // 1. User is not authenticated, redirect to login
     redirect("/login");
   }
 
-  // Fetch the user's profile (name and role)
+  // 2. Fetch the user's profile (name and role)
   const { data: profile, error } = await supabase
     .from('users')
     .select('full_name, role')
     .eq('id', user.id)
     .single();
     
-  if (error || profile?.role !== 'kyc_team') {
-    // Redirect if user is not a KYC member or profile fetch failed
-    console.error("Access denied or profile error:", error);
-    redirect("/"); // Redirect to a safe route
+  // 3. Check for errors or missing profile
+  if (error) {
+      // Log the specific error for debugging on the server
+      console.error("Profile fetch error in KYC Layout:", error);
+  }
+  
+  // 4. Role Check: If profile is missing or role is incorrect, deny access
+  if (!profile || profile.role !== 'kyc_team') {
+    console.warn(`Access denied for user ${user.id}. Role is ${profile?.role || 'null'}.`);
+    redirect("/"); // Redirect to a safe route (e.g., general dashboard or home)
   }
 
   const userProfile: UserProfile = {
