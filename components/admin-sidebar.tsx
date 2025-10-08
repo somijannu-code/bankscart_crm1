@@ -62,7 +62,7 @@ const Button = ({ children, className, variant, ...props }) => {
 
 /**
  * Self-contained Mock LogoutButton
- * Triggers a simple log and page reload on click.
+ * FIX: Now redirects to the root page ('/') instead of refreshing.
  */
 const LogoutButton = ({ isCollapsed }) => (
     <Button
@@ -72,9 +72,9 @@ const LogoutButton = ({ isCollapsed }) => (
             isCollapsed ? "px-2 h-10 flex justify-center" : "px-4 gap-3 justify-start"
         )}
         onClick={() => {
-            console.log("Logout triggered. Refreshing page.");
-            // For a mock, a hard reload is sufficient to simulate state change
-            window.location.reload(); 
+            console.log("Logout successful. Redirecting to root.");
+            // Simulate logout by redirecting to the root path
+            window.location.href = "/";
         }}
     >
         <LogOut className={cn("h-5 w-5", !isCollapsed && "mr-1")} />
