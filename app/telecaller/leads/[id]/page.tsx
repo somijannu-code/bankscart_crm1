@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
-import { Phone, Mail, Calendar, MessageSquare, ArrowLeft, Clock, Send, Loader2, UserCheck, Save } from "lucide-react"
+import { Phone, Mail, Calendar, MessageSquare, ArrowLeft, Clock, Send, Loader2, UserCheck, Save, Users, AlertTriangle } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useEffect, useCallback } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -90,7 +90,7 @@ const DetailItem = ({ label, value, icon, valueClass = '' }: { label: string, va
     </div>
 );
 
-// --- 2. LEAD TRANSFER MODULE COMPONENT ---
+// --- 2. LEAD TRANSFER MODULE COMPONENT (UPDATED) ---
 
 interface LeadTransferModuleProps {
     lead: Lead;
@@ -110,7 +110,9 @@ const LeadTransferModule = ({ lead, onTransferSuccess }: LeadTransferModuleProps
     useEffect(() => {
         const fetchKycUsers = async () => {
             setIsFetchingUsers(true);
-            // Assuming the 'users' table has a 'role' column set to 'kyc-team'
+            setTransferError(null);
+            
+            // Query: Get users where the 'role' column is 'kyc-team'
             const { data, error } = await supabase
                 .from('users') 
                 .select('id, email, full_name')
@@ -119,9 +121,15 @@ const LeadTransferModule = ({ lead, onTransferSuccess }: LeadTransferModuleProps
 
             if (error) {
                 console.error('Error fetching KYC users:', error);
-                setTransferError('Could not load KYC team list.');
+                // ** IMPROVED ERROR MESSAGE FOR RLS DEBUGGING **
+                setTransferError(`Could not load KYC team list. (Error: ${error.message}). Check RLS policies on 'users' table.`);
             } else if (data) {
+                console.log(`Successfully fetched ${data.length} KYC users.`);
                 setKycUsers(data as User[]);
+                if (data.length > 0) {
+                    // Pre-select the first user for convenience
+                    setSelectedKycUserId(data[0].id);
+                }
             }
             setIsFetchingUsers(false);
         };
@@ -137,24 +145,29 @@ const LeadTransferModule = ({ lead, onTransferSuccess }: LeadTransferModuleProps
         setIsTransferring(true);
         setTransferError(null);
 
+        const updatePayload = { 
+            status: STATUSES.TRANSFERRED_TO_KYC,
+            kyc_assigned_to: selectedKycUserId,
+            updated_at: new Date().toISOString()
+        };
+
         // Update the lead: set new status and assign to KYC team member
+        console.log(`Attempting to transfer lead ${lead.id} to KYC user ${selectedKycUserId} with status: ${updatePayload.status}`);
+        
         const { error } = await supabase
             .from('leads')
-            .update({ 
-                status: STATUSES.TRANSFERRED_TO_KYC,
-                kyc_assigned_to: selectedKycUserId,
-                updated_at: new Date().toISOString()
-            })
+            .update(updatePayload)
             .eq('id', lead.id);
         
         setIsTransferring(false);
 
         if (error) {
             console.error("Error transferring lead:", error);
-            setTransferError("Failed to transfer lead. Check permissions.");
+            // ** IMPROVED ERROR MESSAGE FOR UPDATE FAILURE **
+            setTransferError(`Failed to transfer lead. (Error: ${error.message}). Check RLS 'UPDATE' policy on 'leads' table.`);
             toast({
                 title: "Transfer Failed",
-                description: "Could not transfer lead. Please try again.",
+                description: `Could not transfer lead: ${error.message.substring(0, 50)}...`,
                 variant: "destructive",
             });
         } else {
@@ -168,7 +181,7 @@ const LeadTransferModule = ({ lead, onTransferSuccess }: LeadTransferModuleProps
     }, [lead.id, selectedKycUserId, supabase, onTransferSuccess, toast]);
 
     const isAlreadyTransferred = lead.status === STATUSES.TRANSFERRED_TO_KYC;
-    const isButtonDisabled = isTransferring || isFetchingUsers || !selectedKycUserId || isAlreadyTransferred;
+    const isButtonDisabled = isTransferring || isFetchingUsers || !selectedKycUserId || isAlreadyTransferred || kycUsers.length === 0;
 
     const currentKycAssignee = lead.kyc_assigned_to 
         ? kycUsers.find(u => u.id === lead.kyc_assigned_to)?.full_name || kycUsers.find(u => u.id === lead.kyc_assigned_to)?.email || lead.kyc_assigned_to.substring(0, 8) + '...'
@@ -191,20 +204,25 @@ const LeadTransferModule = ({ lead, onTransferSuccess }: LeadTransferModuleProps
                     </div>
                 )}
                 
+                {kycUsers.length === 0 && !isFetchingUsers && !isAlreadyTransferred && (
+                    <div className="bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700 p-3 rounded-md text-sm flex items-center gap-2">
+                        <AlertTriangle className="h-5 w-5 flex-shrink-0" />
+                        <p className="font-semibold">No KYC Team Members Found.</p>
+                        <p className="text-xs">Ensure users with the role 'kyc-team' exist and RLS policies allow the current user to view them.</p>
+                    </div>
+                )}
+
                 <div className="space-y-2">
                     <Label htmlFor="kyc-select">Select KYC Team Member</Label>
                     <Select 
                         value={selectedKycUserId} 
                         onValueChange={setSelectedKycUserId}
-                        disabled={isTransferring || isFetchingUsers || isAlreadyTransferred}
+                        disabled={isTransferring || isFetchingUsers || isAlreadyTransferred || kycUsers.length === 0}
                     >
                         <SelectTrigger id="kyc-select" className="w-full">
                             <SelectValue placeholder={isFetchingUsers ? "Loading team..." : "Select KYC member"} />
                         </SelectTrigger>
                         <SelectContent>
-                            {kycUsers.length === 0 && !isFetchingUsers && (
-                                <div className="p-2 text-center text-sm text-gray-500">No KYC users found.</div>
-                            )}
                             {kycUsers.map(user => (
                                 <SelectItem key={user.id} value={user.id}>
                                     {user.full_name || user.email}
@@ -219,7 +237,12 @@ const LeadTransferModule = ({ lead, onTransferSuccess }: LeadTransferModuleProps
                     )}
                 </div>
 
-                {transferError && <p className="text-sm text-red-600">{transferError}</p>}
+                {transferError && (
+                    <div className="text-sm p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg">
+                        <p className="font-bold">Transfer Error:</p>
+                        <p>{transferError}</p>
+                    </div>
+                )}
 
                 <Button 
                     onClick={handleTransfer} 
@@ -568,7 +591,7 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                             {/* Read-Only Fields */}
                             <DetailItem label="Lead Source" value={lead.source || 'N/A'} />
                             <DetailItem label="Assigned Telecaller ID" value={lead.assigned_to ? lead.assigned_to.substring(0, 8) + '...' : 'Unassigned'} />
-                            {/* NEW KYC ASSIGNMENT COLUMN (Read-only) */}
+                            {/* KYC ASSIGNMENT COLUMN (Read-only) */}
                             <DetailItem label="Assigned KYC ID" value={lead.kyc_assigned_to ? lead.kyc_assigned_to.substring(0, 8) + '...' : 'None'} />
                         </CardContent>
                     </Card>
@@ -674,30 +697,27 @@ export default function LeadDetailPage({ params }: EditLeadPageProps) {
                     </Card>
 
                     {/* KYC Lead Transfer Module: Show only when Login is Done */}
-                    {lead.status === STATUSES.LOGIN_DONE && (
+                    {lead.status === STATUSES.LOGIN_DONE || lead.status === STATUSES.TRANSFERRED_TO_KYC ? (
                         <LeadTransferModule 
                             lead={lead} 
                             onTransferSuccess={handleTransferSuccess}
                         />
-                    )}
-                    
-                    {/* Confirmation Card: Show if already transferred */}
-                    {lead.status === STATUSES.TRANSFERRED_TO_KYC && (
-                        <Card className="shadow-md border-2 border-green-200 bg-green-50">
+                    ) : (
+                        <Card className="shadow-md border-2 border-gray-200 bg-gray-50">
                             <CardHeader>
-                                <CardTitle className="flex items-center gap-2 text-lg text-green-700">
-                                    <UserCheck className="h-5 w-5" />
-                                    KYC Assignment Complete
+                                <CardTitle className="flex items-center gap-2 text-lg text-gray-700">
+                                    <Send className="h-5 w-5" />
+                                    Lead Transfer
                                 </CardTitle>
                             </CardHeader>
                             <CardContent>
-                                <p className="text-sm text-gray-700">
-                                    This lead has been successfully handed over to the KYC team.
+                                <p className="text-sm text-gray-500">
+                                    The **Transfer to KYC** option becomes available when the lead status is **Login Done**.
                                 </p>
                             </CardContent>
                         </Card>
                     )}
-
+                    
                 </div>
             </div>
         </div>
