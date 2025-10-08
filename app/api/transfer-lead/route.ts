@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
-import { transferLeadToKyc } from "@/lib/db-utils";
+import { transferLeadToKyc } from "@/lib/utils";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
