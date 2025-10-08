@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { format, startOfMonth, endOfMonth, parseISO, differenceInMinutes } from "date-fns";
+import { format, startOfMonth, endOfMonth, parseISO, differenceInMinutes, subMonths } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { 
@@ -18,7 +18,8 @@ import {
   AlertCircle,
   Pause,
   Play,
-  Monitor
+  Monitor,
+  ChevronDown
 } from "lucide-react";
 import { 
   Select, 
@@ -49,6 +50,8 @@ import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 import { AttendanceRecord, BreakRecord } from "@/lib/database-schema";
 import { enhancedAttendanceService } from "@/lib/attendance-service-enhanced";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 
 export default function EnhancedTelecallerAttendancePage() {
   const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>({
@@ -66,6 +69,7 @@ export default function EnhancedTelecallerAttendancePage() {
   const [breakType, setBreakType] = useState("lunch");
   const [idleTime, setIdleTime] = useState(0);
   const [lastActivity, setLastActivity] = useState<Date | null>(null);
+  const [dateRangeOpen, setDateRangeOpen] = useState(false);
   const supabase = createClient();
 
   // Track user activity for idle time detection
@@ -338,6 +342,48 @@ export default function EnhancedTelecallerAttendancePage() {
 
   const breakTime = getTotalBreakTime();
 
+  // Quick date range options
+  const quickDateRanges = [
+    { label: "This Month", value: "current-month" },
+    { label: "Last Month", value: "last-month" },
+    { label: "Last 30 Days", value: "last-30-days" },
+    { label: "Last 3 Months", value: "last-3-months" },
+  ];
+
+  const handleQuickDateRange = (range: string) => {
+    const today = new Date();
+    let start: Date;
+    let end: Date;
+
+    switch (range) {
+      case "current-month":
+        start = startOfMonth(today);
+        end = endOfMonth(today);
+        break;
+      case "last-month":
+        const lastMonth = subMonths(today, 1);
+        start = startOfMonth(lastMonth);
+        end = endOfMonth(lastMonth);
+        break;
+      case "last-30-days":
+        start = new Date(today);
+        start.setDate(today.getDate() - 30);
+        end = today;
+        break;
+      case "last-3-months":
+        start = new Date(today);
+        start.setMonth(today.getMonth() - 3);
+        end = today;
+        break;
+      default:
+        start = startOfMonth(today);
+        end = endOfMonth(today);
+    }
+
+    setDateRange({ start, end });
+    setDateRangeOpen(false);
+  };
+
   if (loading) {
     return <div className="p-6">Loading attendance data...</div>;
   }
@@ -349,10 +395,71 @@ export default function EnhancedTelecallerAttendancePage() {
           <h1 className="text-3xl font-bold text-gray-900">Attendance</h1>
           <p className="text-gray-600 mt-1">Track your daily attendance and working hours</p>
         </div>
-        <Button variant="outline">
-          <Calendar className="h-4 w-4 mr-2" />
-          {format(new Date(), "MMMM yyyy")}
-        </Button>
+        
+        {/* Date Range Selector */}
+        <Popover open={dateRangeOpen} onOpenChange={setDateRangeOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="flex items-center gap-2">
+              <Calendar className="h-4 w-4" />
+              {format(dateRange.start, "MMM dd")} - {format(dateRange.end, "MMM dd, yyyy")}
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="end">
+            <div className="p-4 border-b">
+              <h4 className="font-medium mb-2">Quick Select</h4>
+              <div className="space-y-1">
+                {quickDateRanges.map((range) => (
+                  <Button
+                    key={range.value}
+                    variant="ghost"
+                    className="w-full justify-start text-sm"
+                    onClick={() => handleQuickDateRange(range.value)}
+                  >
+                    {range.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="p-4">
+              <h4 className="font-medium mb-2">Custom Range</h4>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="start-date">From Date</Label>
+                  <input
+                    id="start-date"
+                    type="date"
+                    className="w-full p-2 border rounded-md"
+                    value={format(dateRange.start, "yyyy-MM-dd")}
+                    onChange={(e) => {
+                      const newStart = e.target.value ? new Date(e.target.value) : dateRange.start;
+                      setDateRange(prev => ({ ...prev, start: newStart }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="end-date">To Date</Label>
+                  <input
+                    id="end-date"
+                    type="date"
+                    className="w-full p-2 border rounded-md"
+                    value={format(dateRange.end, "yyyy-MM-dd")}
+                    onChange={(e) => {
+                      const newEnd = e.target.value ? new Date(e.target.value) : dateRange.end;
+                      setDateRange(prev => ({ ...prev, end: newEnd }));
+                    }}
+                  />
+                </div>
+                <Button 
+                  onClick={() => setDateRangeOpen(false)}
+                  className="w-full"
+                >
+                  Apply
+                </Button>
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -361,7 +468,7 @@ export default function EnhancedTelecallerAttendancePage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5" />
-              This Month
+              {format(dateRange.start, "MMM yyyy")} - {format(dateRange.end, "MMM yyyy")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -644,7 +751,9 @@ export default function EnhancedTelecallerAttendancePage() {
       {/* Attendance History */}
       <Card>
         <CardHeader>
-          <CardTitle>Attendance History - {format(new Date(), "MMMM yyyy")}</CardTitle>
+          <CardTitle>
+            Attendance History - {format(dateRange.start, "MMM dd")} to {format(dateRange.end, "MMM dd, yyyy")}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
