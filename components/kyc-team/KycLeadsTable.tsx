@@ -23,7 +23,7 @@ interface Lead {
   loan_amount: number | null;
   status: string;
   created_at: string;
-  telecaller_id?: string;
+  assigned_to?: string;
   telecallers?: {
     id: string;
     name: string;
@@ -94,8 +94,8 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
         loan_amount, 
         status, 
         created_at,
-        telecaller_id,
-        telecallers:telecaller_id (id, name, email)
+        assigned_to,
+        telecallers:assigned_to (id, name, email)
       `)
       .eq("kyc_member_id", currentUserId)
       .order("created_at", { ascending: false });
