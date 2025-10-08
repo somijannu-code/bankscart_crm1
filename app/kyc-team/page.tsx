@@ -6,14 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { 
   ShieldCheck, FileText, Users, ArrowRight, Clock, 
-  CheckCircle, TrendingUp, XCircle
+  CheckCircle, TrendingUp, XCircle, DollarSign, Loader2
 } from "lucide-react";
 
-// Updated Lead type now includes the 'status' column
+// Updated Lead type now includes available columns for the dashboard view
 interface Lead {
     id: string;
     name: string;
-    status: string; // Assuming 'status' column is now available
+    status: string;
+    phone: string; // Including phone for display
 }
 
 // Define the available statuses for consistency
@@ -34,15 +35,18 @@ export default async function KycTeamDashboard() {
         redirect("/login"); 
     }
 
-    // 2. Data Fetching for Dashboard - Now filtering and counting by status
+    // Determine the start of today for filtering 'updated_at'
+    const todayStart = new Date().toISOString().split("T")[0];
+
+    // 2. Data Fetching for Dashboard - Using full schema for accurate counts
     const [
       { count: pendingUnderwriting }, 
       { count: approvedToday }, 
-      { count: totalRejected },
+      { count: disbursedToday },
       { data: recentLeadsResult }
     ] =
         await Promise.all([
-            // Count Leads in Underwriting
+            // Count Leads in Underwriting (Primary active status for KYC team)
             supabase.from("leads")
                 .select("*", { count: "exact", head: true })
                 .eq("kyc_member_id", user.id)
@@ -53,27 +57,29 @@ export default async function KycTeamDashboard() {
                 .select("*", { count: "exact", head: true })
                 .eq("kyc_member_id", user.id)
                 .eq("status", STATUSES.APPROVED)
-                .gte("updated_at", new Date().toISOString().split("T")[0]), // Assuming 'updated_at' is now available
+                .gte("updated_at", todayStart),
             
-            // Count Total Rejected Leads
+            // Count Leads Disbursed today
             supabase.from("leads")
                 .select("*", { count: "exact", head: true })
                 .eq("kyc_member_id", user.id)
-                .eq("status", STATUSES.REJECTED),
+                .eq("status", STATUSES.DISBURSED)
+                .gte("updated_at", todayStart),
             
-            // Fetch recent 5 leads that are not yet Disbursed or Rejected
+            // Fetch recent 5 leads that are in active/pending stages
             supabase.from("leads")
-                .select("id, name, status") // Now selecting 'status'
+                .select("id, name, status, phone") 
                 .eq("kyc_member_id", user.id)
-                .not("status", "in", [STATUSES.REJECTED, STATUSES.DISBURSED].join(',')) // Filters out final states
+                .in("status", [STATUSES.LOGIN_DONE, STATUSES.UNDERWRITING]) // Focus on active stages
+                .order("created_at", { ascending: false }) // Using available 'created_at' column
                 .limit(5)
         ]);
 
     const stats = [
         {
-            title: "Pending Underwriting",
+            title: "Leads In Underwriting",
             value: pendingUnderwriting || 0,
-            icon: Clock,
+            icon: Loader2,
             color: "text-amber-600",
             bgColor: "bg-amber-50",
             link: `/kyc-team/leads?status=${STATUSES.UNDERWRITING}`
@@ -87,27 +93,27 @@ export default async function KycTeamDashboard() {
             link: `/kyc-team/leads?status=${STATUSES.APPROVED}`
         },
         {
-            title: "Total Rejected",
-            value: totalRejected || 0,
-            icon: XCircle,
-            color: "text-red-600",
-            bgColor: "bg-red-50",
-            link: `/kyc-team/leads?status=${STATUSES.REJECTED}`
+            title: "Disbursed (Today)",
+            value: disbursedToday || 0,
+            icon: DollarSign,
+            color: "text-purple-600",
+            bgColor: "bg-purple-50",
+            link: `/kyc-team/leads?status=${STATUSES.DISBURSED}`
         },
     ];
 
     const getStatusBadge = (status: string) => {
         switch (status) {
             case STATUSES.LOGIN_DONE:
-                return <Badge variant="secondary" className="bg-blue-400 text-white hover:bg-blue-500">Login Done</Badge>;
+                return <Badge className="bg-blue-400 text-white hover:bg-blue-500">Login Done</Badge>;
             case STATUSES.UNDERWRITING:
-                return <Badge variant="secondary" className="bg-amber-500 text-white hover:bg-amber-600">Underwriting</Badge>;
+                return <Badge className="bg-amber-500 text-white hover:bg-amber-600">Underwriting</Badge>;
             case STATUSES.REJECTED:
-                return <Badge variant="secondary" className="bg-red-600 text-white hover:bg-red-700">Rejected</Badge>;
+                return <Badge className="bg-red-600 text-white hover:bg-red-700">Rejected</Badge>;
             case STATUSES.APPROVED:
-                return <Badge variant="secondary" className="bg-green-600 text-white hover:bg-green-700">Approved</Badge>;
+                return <Badge className="bg-green-600 text-white hover:bg-green-700">Approved</Badge>;
             case STATUSES.DISBURSED:
-                return <Badge variant="secondary" className="bg-purple-600 text-white hover:bg-purple-700">Disbursed</Badge>;
+                return <Badge className="bg-purple-600 text-white hover:bg-purple-700">Disbursed</Badge>;
             default:
                 return <Badge variant="secondary">Unknown</Badge>;
         }
@@ -149,7 +155,7 @@ export default async function KycTeamDashboard() {
                 <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle className="flex items-center gap-2">
                         <TrendingUp className="h-5 w-5 text-gray-600" />
-                        Top 5 Active Leads
+                        Top 5 Active Leads (Login Done / Underwriting)
                     </CardTitle>
                     <Link href="/kyc-team/leads" passHref>
                         <Button variant="ghost" size="sm" className="text-purple-600">View All</Button>
@@ -164,7 +170,7 @@ export default async function KycTeamDashboard() {
                                         <Link href={`/kyc-team/${lead.id}`} className="font-semibold text-purple-700 hover:underline">
                                             {lead.name}
                                         </Link>
-                                        <span className="text-xs text-gray-500">View details</span>
+                                        <span className="text-xs text-gray-500">{lead.phone}</span>
                                     </span>
                                     <div className="flex items-center gap-2">
                                         {getStatusBadge(lead.status)}
