@@ -81,7 +81,6 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
 
   const supabase = createClient();
 
-  // 1. Data Fetching function
  // 1. Data Fetching function
 const fetchLeads = async (setLoading = false) => {
   if (setLoading) setIsLoading(true);
@@ -92,7 +91,6 @@ const fetchLeads = async (setLoading = false) => {
       id, name, phone, loan_amount, status, created_at,
       pan_number, application_number, disbursed_amount, gender
     `)
-    // Fetch leads where either kyc_member_id OR kyc_assigned_to matches currentUserId
     .or(`kyc_member_id.eq.${currentUserId},kyc_assigned_to.eq.${currentUserId}`)
     .order("created_at", { ascending: false });
 
@@ -101,11 +99,24 @@ const fetchLeads = async (setLoading = false) => {
     query = query.eq('status', statusFilter);
   }
 
-  const { data, error } = await query;
+  console.log("Fetching leads with query:", {
+    currentUserId,
+    statusFilter,
+    query: `kyc_member_id.eq.${currentUserId},kyc_assigned_to.eq.${currentUserId}`
+  });
+
+  const { data, error, count } = await query;
+
+  console.log("Query results:", {
+    dataCount: data?.length,
+    error,
+    data: data
+  });
 
   if (error) {
     console.error("Error fetching leads:", error);
   } else {
+    console.log("Successfully fetched leads:", data);
     setLeads(data as Lead[]);
   }
   if (setLoading) setIsLoading(false);
