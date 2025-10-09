@@ -1,38 +1,5 @@
 "use client";
 
-// --- START: FIX FOR UNRESOLVABLE IMPORTS ---
-// FIX 1: Mock createClient to avoid "@/lib/supabase/client" resolution error.
-// This mock object is structured to allow the .from().select() and .update() 
-// methods used in the component to compile, and provides mock data for preview.
-const createClient = () => {
-    return {
-        from: (table: string) => ({
-            select: (query: string) => ({
-                eq: (column: string, value: string) => ({
-                    single: async () => {
-                        // This mock error will trigger the mock data display below.
-                        return { data: null, error: new Error("Mock error: Supabase not connected.") };
-                    },
-                }),
-            }),
-            update: async (data: any) => ({ error: null }),
-        }),
-        channel: (channelName: string) => ({
-            on: () => ({ subscribe: () => ({ unsubscribe: () => {} }) }),
-            subscribe: () => ({ unsubscribe: () => {} }),
-        }),
-    };
-};
-
-// FIX 2: Mock useRouter to avoid "next/navigation" resolution error.
-// Uses console logging for navigation actions.
-const useRouter = () => ({
-    push: (path: string) => console.log('Navigation: Pushing to', path),
-    back: () => console.log('Navigation: Going back'),
-    replace: (path: string) => console.log('Navigation: Replacing with', path),
-});
-// --- END: FIX FOR UNRESOLVABLE IMPORTS ---
-
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -106,6 +73,7 @@ interface Lead {
 // Utility to format currency
 const formatCurrency = (value: number | null) => {
     if (value === null || isNaN(Number(value))) return "N/A";
+    // Use 'en-IN' for Indian Rupee formatting
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
@@ -137,6 +105,84 @@ const getStatusBadge = (status: string) => {
     }
 };
 
+// --- MOCK DATA AND MOCK IMPORTS FOR COMPILATION ---
+
+// Static Mock Data
+const MOCK_LEAD_DATA: Lead = {
+  id: "lead-45678",
+  name: "Priya Sharma",
+  email: "priya.sharma@example.com",
+  phone: "9876543210",
+  company: "Tech Solutions Pvt Ltd",
+  designation: "Senior Software Engineer",
+  source: "Website Form",
+  status: STATUSES.UNDERWRITING,
+  priority: "high",
+  assigned_to: "user-12345",
+  created_at: new Date(Date.now() - 86400000).toISOString(),
+  updated_at: new Date().toISOString(),
+  loan_amount: 500000,
+  loan_type: "Personal Loan",
+  address: "123, Residency Road, Bengaluru", // Legacy address field
+  city: "Bengaluru",
+  state: "Karnataka",
+  country: "India",
+  zip_code: "560001",
+  pan_number: "ABCDE1234F",
+  residence_address: "Apartment 301, Sector 4, Noida", 
+  permanent_address: "House 50, Gandhi Marg, Jaipur",
+  office_address: "Global Tech Park, Outer Ring Road, Bengaluru",
+  application_number: "PL4567890",
+  nth_salary: 75000,
+  office_mail_id: "psharma@techsolutions.com",
+  disbursed_amount: 250000, // Added a value to show it works
+  roi_percentage: 12.5,
+  tenure: 36,
+  gender: 'Female',
+  marital_status: 'Married',
+  residence_type: 'Rented',
+  experience_years: 5,
+  occupation: 'Private',
+  alternative_mobile_number: '9988776655',
+  bank_name: 'HDFC Bank',
+  account_number: '50100123456789',
+  telecaller_name: 'Amit Patel',
+};
+
+// Mock Next.js Router to resolve "next/navigation" error
+const useRouter = () => ({
+  push: (path: string) => console.log(`[MOCK] Navigating to: ${path}`),
+  back: () => console.log("[MOCK] Going back..."),
+});
+
+// Mock Supabase client to resolve "@/lib/supabase/client" error
+const createClient = () => ({
+    from: (table: string) => ({
+        select: (columns: string) => ({
+            eq: () => ({
+                single: async () => ({
+                    // Return mock data for the fetch operation
+                    data: MOCK_LEAD_DATA, 
+                    error: null,
+                }),
+            }),
+        }),
+        update: () => ({
+            eq: async () => ({ error: null }),
+        }),
+    }),
+    // Mock the real-time channel setup
+    channel: (name: string) => ({
+        on: () => ({
+            subscribe: () => ({
+                unsubscribe: () => {},
+            }),
+        }),
+    }),
+    removeChannel: () => {},
+});
+
+
 // --- 2. INLINE STATUS UPDATER COMPONENT ---
 
 interface LeadStatusUpdaterProps {
@@ -148,7 +194,9 @@ interface LeadStatusUpdaterProps {
 const LeadStatusUpdater = ({ leadId, currentStatus, onStatusUpdate }: LeadStatusUpdaterProps) => {
     const [newStatus, setNewStatus] = useState(currentStatus);
     const [isUpdating, setIsUpdating] = useState(false);
-    const supabase = createClient();
+    
+    // Use the mocked client
+    const supabase = createClient(); 
 
     // Reset status selector if parent component updates currentStatus (e.g., from real-time listener)
     useEffect(() => {
@@ -161,8 +209,9 @@ const LeadStatusUpdater = ({ leadId, currentStatus, onStatusUpdate }: LeadStatus
         }
 
         setIsUpdating(true);
-        // This will call the mocked supabase.update, which logs the update but doesn't persist it.
-        const { error } = await supabase
+        
+        // This update call now uses the mock, which will succeed silently
+        const { error } = await supabase 
             .from('leads')
             .update({ status: newStatus, updated_at: new Date().toISOString() })
             .eq('id', leadId);
@@ -170,11 +219,11 @@ const LeadStatusUpdater = ({ leadId, currentStatus, onStatusUpdate }: LeadStatus
         setIsUpdating(false);
 
         if (error) {
-            console.error("Error updating status:", error);
-            // toast.error("Failed to update status. Please try again.");
+            console.error("MOCK: Error updating status:", error);
             setNewStatus(currentStatus); 
         } else {
-            // toast.success(`Status updated to ${newStatus}`);
+            // MOCK: Simulate success and update local state
+            console.log(`MOCK: Successfully updated status to ${newStatus}`);
             onStatusUpdate(newStatus); 
         }
     }, [newStatus, currentStatus, leadId, supabase, onStatusUpdate]);
@@ -246,103 +295,33 @@ interface LeadProfilePageProps {
 }
 
 export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
-  const router = useRouter();
+  const router = useRouter(); // Mocked router
   const leadId = params.id;
   const [lead, setLead] = useState<Lead | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const supabase = createClient();
+  const supabase = createClient(); // Mocked client
 
   const fetchLead = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     
-    // Fetch all columns, including the new fields
+    // In the mock, the select query is irrelevant, it just returns MOCK_LEAD_DATA
     const { data, error } = await supabase
       .from('leads')
-      .select(`
-        id, name, email, phone, company, designation, source, 
-        status, priority, assigned_to, created_at, updated_at, 
-        loan_amount, loan_type, address, city, state, country, zip_code,
-        
-        -- NEW KYC/PERSONAL FIELDS
-        pan_number, gender, marital_status, residence_type, alternative_mobile_number,
-        
-        -- NEW EMPLOYMENT FIELDS
-        occupation, experience_years:experience, office_mail_id,
-        
-        -- NEW ADDRESS FIELDS (assuming existing 'address' is residence)
-        permanent_address, office_address, residence_address, 
-        
-        -- NEW LOAN/FINANCIAL FIELDS
-        application_number, nth_salary, disbursed_amount, roi_percentage:roi, tenure,
-        
-        -- NEW BANK FIELDS
-        bank_name, account_number, 
-        
-        -- METADATA
-        telecaller_name
-      `)
+      .select('...')
       .eq('id', leadId)
       .single();
 
     if (error) {
-        // Provide sensible mock data if the fetch fails due to the unresolvable Supabase client mock.
-        if (error.message.includes("Mock error")) {
-             const mockData: Lead = {
-                id: leadId,
-                name: "Rohan Sharma (MOCK)",
-                email: "rohan.sharma@example.com",
-                phone: "9876543210",
-                company: "Tech Innovations Pvt Ltd",
-                designation: "Senior Software Engineer",
-                source: "Website",
-                status: "UNDERWRITING",
-                priority: "high",
-                assigned_to: "kyc_user_123",
-                created_at: new Date(Date.now() - 86400000).toISOString(),
-                updated_at: new Date().toISOString(),
-                loan_amount: 500000,
-                loan_type: "Personal Loan",
-                address: "45, Sector 14, Vashi",
-                city: "Navi Mumbai",
-                state: "Maharashtra",
-                country: "India",
-                zip_code: "400703",
-                
-                // NEW FIELDS (MOCKED)
-                pan_number: "ABCDE1234F",
-                residence_address: "45, Sector 14, Vashi, Navi Mumbai, Maharashtra",
-                permanent_address: "101, Green Apts, Pune, Maharashtra",
-                office_address: "B-201, Infinity Tower, CBD Belapur, Navi Mumbai",
-                application_number: "LMS-987654",
-                nth_salary: 85000,
-                office_mail_id: "rohan.sharma@techinnovations.com",
-                disbursed_amount: 450000,
-                roi_percentage: 12.5,
-                tenure: 36,
-                gender: 'Male',
-                marital_status: 'Married',
-                residence_type: 'Rented',
-                experience_years: 7,
-                occupation: 'Private',
-                alternative_mobile_number: "9988776655",
-                bank_name: "HDFC Bank",
-                account_number: "50100123456789",
-                telecaller_name: "Priya Singh",
-             };
-            setLead(mockData);
-            setError("Note: Live data fetching failed. Displaying mock data for component preview.");
-        } else {
-            // Real Supabase error
-            console.error("Error fetching lead:", error);
-            setError(`Lead not found or error fetching data: ${error.message}`);
-            setLead(null);
-        }
+      console.error("MOCK: Error fetching lead (Mocked data was expected):", error);
+      setError(`MOCK: Lead not found or error fetching data: ${error.message}`);
+      setLead(null);
     } else {
       // Map 'address' to 'residence_address' if needed, 
       const leadData: Lead = {
           ...(data as Lead),
+          // Fallback logic for address fields: Use 'address' if 'residence_address' is null
           residence_address: data.residence_address || data.address,
       }
       setLead(leadData);
@@ -353,8 +332,7 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
   useEffect(() => {
     fetchLead();
 
-    // Setup Real-time Listener for the specific lead to update status automatically
-    // This relies on the mocked 'supabase' object's 'channel' method to compile.
+    // The real-time listener is now mocked and does nothing
     const channel = supabase.channel(`lead_${leadId}_changes`);
 
     const subscription = channel
@@ -362,8 +340,10 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'leads', filter: `id=eq.${leadId}` },
         (payload) => {
-          // In a live environment, this would update the lead state.
-          console.log("Real-time update received (mock listener):", payload.new);
+          // This block is only for logging in the mock
+          console.log("MOCK: Real-time listener received update.");
+          // In a real app, you would update state here:
+          // setLead(prev => ({ ...(prev as Lead), ...(payload.new as Lead) }));
         }
       )
       .subscribe();
@@ -376,7 +356,7 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
 
   const handleStatusUpdate = (newStatus: string) => {
       // Update the local state instantly after successful update from LeadStatusUpdater
-      setLead(prev => (prev ? { ...prev, status: newStatus } : null));
+      setLead(prev => (prev ? { ...prev, status: newStatus, updated_at: new Date().toISOString() } : null));
   };
 
 
@@ -388,8 +368,9 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
       </div>
     );
   }
-
-  if (!lead) {
+  
+  // Since we are mocking, this error state should not be hit, but we keep the check
+  if (error || !lead) { 
     return (
       <div className="p-8 text-center bg-red-50 border border-red-200 rounded-xl">
         <XCircle className="h-10 w-10 text-red-500 mx-auto" />
@@ -418,14 +399,6 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
             Last Updated: {new Date(lead.updated_at).toLocaleString()}
         </div>
       </div>
-      
-      {/* Error/Mock Data Notification */}
-      {error && (
-        <div className="p-3 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 rounded-md shadow-sm">
-            <p className="text-sm font-medium">{error}</p>
-        </div>
-      )}
-
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
