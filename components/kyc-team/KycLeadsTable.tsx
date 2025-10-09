@@ -69,129 +69,75 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState(initialStatus || "all");
-  const [debugInfo, setDebugInfo] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string>("Initializing...");
 
   const supabase = createClient();
 
-  // Simplified and focused data fetching
+  // Direct data fetching with minimal processing
   const fetchLeads = async (setLoading = false) => {
-    if (setLoading) {
-      setIsLoading(true);
-      setError(null);
-    }
+    if (setLoading) setIsLoading(true);
     
-    console.log("🔄 FETCH_LEADS: Starting...", { currentUserId, statusFilter });
+    console.log("🔍 Starting fetchLeads with:", { currentUserId, statusFilter });
 
     try {
-      // Direct query - we know this works from your SQL test
-      let query = supabase
+      // Simple direct query
+      const { data, error } = await supabase
         .from("leads")
-        .select(`
-          id, 
-          name, 
-          phone, 
-          loan_amount, 
-          status, 
-          created_at,
-          assigned_to
-        `)
+        .select("*")
         .eq("kyc_member_id", currentUserId)
         .order("created_at", { ascending: false });
 
-      if (statusFilter !== 'all') {
-        query = query.eq('status', statusFilter);
-      }
-
-      const { data, error } = await query;
-
-      console.log("📊 FETCH_LEADS: Query result", { 
-        data, 
-        error,
-        dataLength: data?.length,
-        currentUserId 
-      });
+      console.log("📊 Raw query response:", { data, error, dataLength: data?.length });
 
       if (error) {
-        console.error("❌ FETCH_LEADS: Error", error);
-        setError(`Database error: ${error.message}`);
+        console.error("❌ Query error:", error);
+        setDebugInfo(`Error: ${error.message}`);
         setLeads([]);
       } else {
-        console.log("✅ FETCH_LEADS: Success", { 
-          leadsCount: data.length,
-          leads: data.map(lead => ({ id: lead.id, name: lead.name, status: lead.status }))
-        });
+        console.log("✅ Data received:", data);
         
-        setLeads(data as Lead[]);
-        
-        // Update debug info
-        setDebugInfo(`
-          Query executed successfully!
-          Found: ${data.length} leads
-          User ID: ${currentUserId}
-          Leads: ${data.map(lead => `${lead.name} (${lead.status})`).join(', ')}
-        `);
-
-        if (data.length === 0) {
-          setError("No leads found with current filters. Try changing the status filter to 'all'.");
+        // Check if data is an array and has items
+        if (Array.isArray(data) && data.length > 0) {
+          console.log("🎯 Setting leads state with:", data.length, "items");
+          setLeads(data);
+          setDebugInfo(`Success! Found ${data.length} leads:\n${data.map(lead => `• ${lead.name} (${lead.status})`).join('\n')}`);
         } else {
-          setError(null);
+          console.log("⚠️ No data or empty array");
+          setLeads([]);
+          setDebugInfo("No leads found in the response array");
         }
       }
-
-    } catch (catchError) {
-      console.error("💥 FETCH_LEADS: Unexpected error", catchError);
-      setError(`Unexpected error: ${catchError}`);
+    } catch (error) {
+      console.error("💥 Unexpected error:", error);
+      setDebugInfo(`Unexpected error: ${error}`);
+      setLeads([]);
+    } finally {
+      if (setLoading) setIsLoading(false);
     }
-
-    if (setLoading) setIsLoading(false);
   };
 
-  // Real-time Listener and Initial Load
+  // Initial load
   useEffect(() => {
-    console.log("🎯 USEEFFECT: Component mounted/updated", { currentUserId, statusFilter });
+    console.log("🚀 Component mounted, fetching leads...");
     fetchLeads(true);
-
-    const channel = supabase.channel(`kyc_leads_user_${currentUserId}`);
-
-    const subscription = channel
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'leads' },
-        (payload) => {
-          console.log("🔔 REALTIME: Update received", payload);
-          fetchLeads(false);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, [currentUserId, statusFilter]);
 
-  // Filtering Logic (Client-side search)
+  // Filtering Logic
   const filteredLeads = useMemo(() => {
-    console.log("🔍 FILTERING: Applying search", { 
-      totalLeads: leads.length, 
-      searchTerm,
-      filteredCount: leads.filter(lead => 
-        lead.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        lead.phone.includes(searchTerm) ||
-        lead.id.toLowerCase().includes(searchTerm.toLowerCase())
-      ).length
-    });
+    console.log("🔍 Filtering leads:", { total: leads.length, searchTerm });
     
     if (!searchTerm) return leads;
     
     const lowerCaseSearch = searchTerm.toLowerCase();
-    
-    return leads.filter(
+    const filtered = leads.filter(
       (lead) => 
         lead.name.toLowerCase().includes(lowerCaseSearch) ||
         lead.phone.includes(lowerCaseSearch) ||
         lead.id.toLowerCase().includes(lowerCaseSearch)
     );
+    
+    console.log("📋 Filtered results:", filtered.length);
+    return filtered;
   }, [leads, searchTerm]);
 
   // Function to display assigned to information
@@ -205,44 +151,49 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
   return (
     <div className="space-y-4">
       {/* Debug Information */}
-      <Card className="bg-blue-50 border-blue-200 p-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-blue-800">Debug Info</h3>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => {
-              console.log("📋 DEBUG INFO:", {
-                currentUserId,
-                statusFilter,
-                leads,
-                filteredLeads,
-                isLoading,
-                error
-              });
-              navigator.clipboard.writeText(debugInfo);
-            }}
-          >
-            Copy Debug Info
-          </Button>
+      <Card className="bg-yellow-50 border-yellow-200 p-4">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold text-yellow-800">Debug Information</h3>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => {
+                console.log("Current state:", { leads, filteredLeads, isLoading, currentUserId });
+                fetchLeads(true);
+              }}
+            >
+              Refresh & Log
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => {
+                // Test direct query
+                supabase
+                  .from("leads")
+                  .select("*")
+                  .eq("kyc_member_id", currentUserId)
+                  .then(({ data, error }) => {
+                    console.log("Direct test query:", { data, error });
+                    alert(`Direct query result: ${data?.length || 0} leads, error: ${error?.message || 'none'}`);
+                  });
+              }}
+            >
+              Test Query
+            </Button>
+          </div>
         </div>
-        <pre className="text-xs text-blue-700 mt-2 whitespace-pre-wrap max-h-32 overflow-auto">
-          {debugInfo || "Run a query to see debug info..."}
+        <div className="text-sm text-yellow-700 space-y-1">
+          <div><strong>User ID:</strong> {currentUserId}</div>
+          <div><strong>Status Filter:</strong> {statusFilter}</div>
+          <div><strong>Leads in state:</strong> {leads.length}</div>
+          <div><strong>Filtered leads:</strong> {filteredLeads.length}</div>
+        </div>
+        <pre className="text-xs text-yellow-600 mt-2 whitespace-pre-wrap overflow-auto max-h-20">
+          {debugInfo}
         </pre>
       </Card>
-
-      {/* Error Display */}
-      {error && (
-        <Card className="bg-red-50 border-red-200 p-4">
-          <div className="flex items-center">
-            <XCircle className="h-5 w-5 text-red-400 mr-2" />
-            <div>
-              <h3 className="text-sm font-semibold text-red-800">Unable to load leads</h3>
-              <p className="text-sm text-red-700 mt-1">{error}</p>
-            </div>
-          </div>
-        </Card>
-      )}
 
       {/* Controls */}
       <div className="flex flex-col sm:flex-row gap-4 justify-between">
@@ -302,10 +253,10 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
                   <TableCell colSpan={6} className="h-24 text-center text-gray-500">
                     <Users className="w-6 h-6 mx-auto mb-2"/>
                     {leads.length === 0 
-                      ? "No leads found assigned to you." 
+                      ? "No leads found in database for your account." 
                       : "No leads match your search criteria."}
                     <p className="text-xs mt-2">User ID: {currentUserId}</p>
-                    <p className="text-xs">Total in DB: {leads.length} | After search: {filteredLeads.length}</p>
+                    <p className="text-xs">Leads in state: {leads.length} | After search: {filteredLeads.length}</p>
                   </TableCell>
                 </TableRow>
               ) : (
@@ -356,6 +307,9 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
       
       <div className="text-center py-2 text-sm text-gray-600">
         Displaying {filteredLeads.length} of {leads.length} leads.
+        {leads.length > 0 && (
+          <span className="text-xs text-green-600 ml-2">✓ Data loaded successfully</span>
+        )}
       </div>
     </div>
   );
