@@ -83,44 +83,38 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
 
  // 1. Data Fetching function
 const fetchLeads = async (setLoading = false) => {
-  if (setLoading) setIsLoading(true);
-  
-  let query = supabase
-    .from("leads")
-    .select(`
-      id, name, phone, loan_amount, status, created_at,
-      pan_number, application_number, disbursed_amount, gender
-    `)
-    .or(`kyc_member_id.eq.${currentUserId},kyc_assigned_to.eq.${currentUserId}`)
-    .order("created_at", { ascending: false });
+    if (setLoading) setIsLoading(true);
+    
+    let query = supabase
+      .from("leads")
+      // Updated select to include telecaller information
+      .select(`
+        id, 
+        name, 
+        phone, 
+        loan_amount, 
+        status, 
+        created_at,
+        assigned_to,
+        telecallers:assigned_to (id, name, email)
+      `)
+      .eq("kyc_member_id", currentUserId)
+      .order("created_at", { ascending: false });
 
-  // Apply status filter to the database query
-  if (statusFilter !== 'all') {
-    query = query.eq('status', statusFilter);
-  }
+    // Apply status filter to the database query
+    if (statusFilter !== 'all') {
+      query = query.eq('status', statusFilter);
+    }
 
-  console.log("Fetching leads with query:", {
-    currentUserId,
-    statusFilter,
-    query: `kyc_member_id.eq.${currentUserId},kyc_assigned_to.eq.${currentUserId}`
-  });
+    const { data, error } = await query;
 
-  const { data, error, count } = await query;
-
-  console.log("Query results:", {
-    dataCount: data?.length,
-    error,
-    data: data
-  });
-
-  if (error) {
-    console.error("Error fetching leads:", error);
-  } else {
-    console.log("Successfully fetched leads:", data);
-    setLeads(data as Lead[]);
-  }
-  if (setLoading) setIsLoading(false);
-};
+    if (error) {
+      console.error("Error fetching leads:", error);
+    } else {
+      setLeads(data as Lead[]);
+    }
+    if (setLoading) setIsLoading(false);
+  };
   
   // NOTE on other fields: residence address, permanent address, office address, nth salary, 
   // office mail id, mail id, Roi(in percentage), tenure, marital status, residence type, 
