@@ -243,7 +243,7 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
                 filteredLeads.map((lead) => (
                   <TableRow key={lead.id} className="hover:bg-purple-50 transition-colors">
                     <TableCell className="font-medium text-purple-700 hover:underline">
-                      <Link href={`/kyc-team/${lead.id}`}>{lead.name}</Link>
+                      <Link href={`/kyc_team/${lead.id}`}>{lead.name}</Link>
                       <p className="text-xs text-gray-500 mt-0.5">ID: {lead.id.substring(0, 8)}</p>
                     </TableCell>
                     <TableCell>{lead.phone}</TableCell>
@@ -267,7 +267,7 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem asChild>
-                            <Link href={`/kyc-team/${lead.id}`} className="flex items-center">
+                            <Link href={`/kyc_team/${lead.id}`} className="flex items-center">
                                 <Eye className="h-4 w-4 mr-2" />
                                 View KYC/Details
                             </Link>
