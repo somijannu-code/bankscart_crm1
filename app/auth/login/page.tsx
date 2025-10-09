@@ -37,8 +37,11 @@ export default function LoginPage() {
       // Get user role to redirect appropriately
       const { data: userData } = await supabase.from("users").select("role").eq("email", email).single()
 
+      // Redirect based on user role
       if (userData?.role === "admin") {
         router.push("/admin")
+      } else if (userData?.role === "kyc_team") {
+        router.push("/kyc-team")
       } else {
         router.push("/telecaller")
       }
