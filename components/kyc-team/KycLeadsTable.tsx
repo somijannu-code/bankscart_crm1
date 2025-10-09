@@ -5,7 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { 
   Search, Filter, ChevronDown, ChevronUp, MoreHorizontal, 
-  Loader2, RefreshCw, Eye, Hash, Users, Clock, CheckCircle, XCircle, DollarSign
+  Loader2, RefreshCw, Eye, Hash, Users, Clock, CheckCircle, XCircle, DollarSign, User
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Card } from "@/components/ui/card";
 
-// Lead interface reflecting available columns for the table view
+// Updated Lead interface to include telecaller information and additional fields
 interface Lead {
   id: string;
   name: string;
@@ -23,17 +23,23 @@ interface Lead {
   loan_amount: number | null;
   status: string;
   created_at: string;
-  // --- NEW FIELDS ADDED ---
+  assigned_to?: string;
+  telecallers?: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  // Additional fields for comprehensive lead information
   pan_number: string | null;
   application_number: string | null;
-  disbursed_amount: number | null; // For Disbursed Amount
-  gender: 'MALE' | 'FEMALE' | 'OTHER' | null; // For Gender
-  // --- END NEW FIELDS ---
+  disbursed_amount: number | null;
+  gender: 'MALE' | 'FEMALE' | 'OTHER' | null;
+  kyc_member_id: string;
 }
 
 interface KycLeadsTableProps {
     currentUserId: string;
-    initialStatus: string; // Used to capture status filter from URL (e.g., /kyc-team/leads?status=Underwriting)
+    initialStatus: string;
 }
 
 // Define the available statuses for consistency
@@ -72,33 +78,46 @@ const formatCurrency = (value: number | null) => {
     }).format(Number(value));
 };
 
+const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat('en-IN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+    }).format(date);
+};
+
 export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeadsTableProps) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  // Initialize status filter from URL query param
   const [statusFilter, setStatusFilter] = useState(initialStatus || "all"); 
 
   const supabase = createClient();
 
- // 1. Data Fetching function
-const fetchLeads = async (setLoading = false) => {
+  // Data Fetching function with comprehensive lead information
+  const fetchLeads = async (setLoading = false) => {
     if (setLoading) setIsLoading(true);
     
     let query = supabase
-  .from("leads")
-  .select(`
-    id, 
-    name, 
-    phone, 
-    loan_amount, 
-    status, 
-    created_at,
-    assigned_to,
-    telecallers:assigned_to (id, name, email)
-  `)
-  .eq("kyc_member_id", currentUserId) // This filters leads only for the current KYC member
-  .order("created_at", { ascending: false });
+      .from("leads")
+      .select(`
+        id, 
+        name, 
+        phone, 
+        loan_amount, 
+        status, 
+        created_at,
+        assigned_to,
+        pan_number,
+        application_number,
+        disbursed_amount,
+        gender,
+        kyc_member_id,
+        telecallers:assigned_to (id, name, email)
+      `)
+      .eq("kyc_member_id", currentUserId)
+      .order("created_at", { ascending: false });
 
     // Apply status filter to the database query
     if (statusFilter !== 'all') {
@@ -114,46 +133,36 @@ const fetchLeads = async (setLoading = false) => {
     }
     if (setLoading) setIsLoading(false);
   };
-  
-  // NOTE on other fields: residence address, permanent address, office address, nth salary, 
-  // office mail id, mail id, Roi(in percentage), tenure, marital status, residence type, 
-  // experience, occupation, designation, alternative mobile number, bank name, account number, 
-  // and telecaller name are typically detailed information. To keep the table manageable, 
-  // they are best added to the Supabase select statement but displayed only on the 
-  // individual lead details page (/kyc-team/${lead.id}).
 
-  // 2. Real-time Listener and Initial Load
+  // Real-time Listener and Initial Load
   useEffect(() => {
     fetchLeads(true); 
 
     const channel = supabase.channel(`kyc_leads_user_${currentUserId}`);
 
     const subscription = channel
-  .on(
-    'postgres_changes',
-    { event: '*', schema: 'public', table: 'leads' },
-    (payload) => {
-      const changedLead = payload.new as Lead | null;
-      const oldLead = payload.old as Lead | null;
-      
-      // Check both kyc_member_id and kyc_assigned_to columns
-      const isRelevant = 
-         changedLead?.kyc_member_id === currentUserId || 
-         changedLead?.kyc_assigned_to === currentUserId ||
-         oldLead?.kyc_member_id === currentUserId ||
-         oldLead?.kyc_assigned_to === currentUserId;
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'leads' },
+        (payload) => {
+          const changedLead = payload.new as Lead | null;
+          const oldLead = payload.old as Lead | null;
+          
+          const isRelevant = 
+             changedLead?.kyc_member_id === currentUserId || 
+             oldLead?.kyc_member_id === currentUserId; 
 
-      if (isRelevant) {
-         console.log("Relevant lead change detected. Refetching leads...");
-         fetchLeads(false); 
-      }
-    }
-  )
-  .subscribe((status) => {
-    if (status === 'SUBSCRIBED') {
-      console.log(`Subscribed to KYC leads changes for user: ${currentUserId}`);
-    }
-  });
+          if (isRelevant) {
+             console.log("Relevant lead change detected. Refetching leads...");
+             fetchLeads(false); 
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log(`Subscribed to KYC leads changes for user: ${currentUserId}`);
+        }
+      });
 
     return () => {
         supabase.removeChannel(channel);
@@ -161,7 +170,7 @@ const fetchLeads = async (setLoading = false) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId, statusFilter]); 
 
-  // 3. Filtering Logic (Client-side search)
+  // Filtering Logic (Client-side search)
   const filteredLeads = useMemo(() => {
     if (!searchTerm) return leads;
     
@@ -172,12 +181,30 @@ const fetchLeads = async (setLoading = false) => {
             lead.name.toLowerCase().includes(lowerCaseSearch) ||
             lead.phone.includes(lowerCaseSearch) ||
             lead.id.toLowerCase().includes(lowerCaseSearch) ||
-            lead.pan_number?.toLowerCase().includes(lowerCaseSearch) || // Search by PAN
-            lead.application_number?.toLowerCase().includes(lowerCaseSearch) // Search by Application Number
+            (lead.telecallers?.name && lead.telecallers.name.toLowerCase().includes(lowerCaseSearch)) ||
+            (lead.pan_number && lead.pan_number.toLowerCase().includes(lowerCaseSearch)) ||
+            (lead.application_number && lead.application_number.toLowerCase().includes(lowerCaseSearch))
     );
   }, [leads, searchTerm]);
 
-  // 4. Pagination is removed for simplicity, displaying all results
+  // Function to display telecaller name
+  const getTelecallerName = (lead: Lead) => {
+    if (lead.telecallers?.name) {
+      return lead.telecallers.name;
+    }
+    return "Unassigned";
+  };
+
+  // Function to get gender display text
+  const getGenderDisplay = (gender: string | null) => {
+    if (!gender) return "N/A";
+    switch (gender) {
+      case 'MALE': return 'Male';
+      case 'FEMALE': return 'Female';
+      case 'OTHER': return 'Other';
+      default: return gender;
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -186,7 +213,7 @@ const fetchLeads = async (setLoading = false) => {
         <div className="flex items-center space-x-2 w-full sm:w-1/2">
           <Search className="h-5 w-5 text-gray-400" />
           <Input
-            placeholder="Search by Name, Phone, PAN, or Application No..."
+            placeholder="Search by Name, Phone, ID, PAN, App No, or Telecaller..."
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
@@ -223,11 +250,12 @@ const fetchLeads = async (setLoading = false) => {
               <TableRow className="bg-gray-50">
                 <TableHead className="min-w-[150px]">Lead Name</TableHead>
                 <TableHead>Phone</TableHead>
-                <TableHead className="hidden sm:table-cell">App No</TableHead> {/* Application Number */}
-                <TableHead className="hidden md:table-cell">PAN</TableHead> {/* PAN Number */}
-                <TableHead className="hidden lg:table-cell">Gender</TableHead> {/* Gender */}
-                <TableHead>Loan Req</TableHead> {/* Loan Amount */}
-                <TableHead>Disbursed</TableHead> {/* Disbursed Amount */}
+                <TableHead className="hidden sm:table-cell">App No</TableHead>
+                <TableHead className="hidden md:table-cell">PAN</TableHead>
+                <TableHead className="hidden lg:table-cell">Gender</TableHead>
+                <TableHead>Loan Req</TableHead>
+                <TableHead>Disbursed</TableHead>
+                <TableHead>Telecaller</TableHead>
                 <TableHead className="min-w-[140px]">Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -235,14 +263,14 @@ const fetchLeads = async (setLoading = false) => {
             <TableBody>
               {isLoading && filteredLeads.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="h-24 text-center">
+                  <TableCell colSpan={10} className="h-24 text-center">
                     <Loader2 className="w-6 h-6 animate-spin mx-auto text-purple-500" />
                     <p className="mt-2 text-gray-600">Loading leads...</p>
                   </TableCell>
                 </TableRow>
               ) : filteredLeads.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="h-24 text-center text-gray-500">
+                  <TableCell colSpan={10} className="h-24 text-center text-gray-500">
                     <Users className="w-6 h-6 mx-auto mb-2"/>
                     No assigned leads found matching your filters.
                   </TableCell>
@@ -253,16 +281,31 @@ const fetchLeads = async (setLoading = false) => {
                     <TableCell className="font-medium text-purple-700 hover:underline">
                       <Link href={`/kyc-team/${lead.id}`}>{lead.name}</Link>
                       <p className="text-xs text-gray-500 mt-0.5">ID: {lead.id.substring(0, 8)}</p>
+                      <p className="text-xs text-gray-400">{formatDate(lead.created_at)}</p>
                     </TableCell>
                     <TableCell>{lead.phone}</TableCell>
-                    <TableCell className="hidden sm:table-cell text-xs">{lead.application_number || 'N/A'}</TableCell>
-                    <TableCell className="hidden md:table-cell text-xs">{lead.pan_number || 'N/A'}</TableCell>
-                    <TableCell className="hidden lg:table-cell text-xs">{lead.gender || 'N/A'}</TableCell>
+                    <TableCell className="hidden sm:table-cell text-xs">
+                      {lead.application_number || 'N/A'}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-xs">
+                      {lead.pan_number || 'N/A'}
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell text-xs">
+                      {getGenderDisplay(lead.gender)}
+                    </TableCell>
                     <TableCell className="font-semibold text-xs">
-                        {formatCurrency(lead.loan_amount)}
+                      {formatCurrency(lead.loan_amount)}
                     </TableCell>
                     <TableCell className="font-bold text-green-600 text-xs">
-                        {formatCurrency(lead.disbursed_amount)}
+                      {formatCurrency(lead.disbursed_amount)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <User className="h-4 w-4 text-gray-500" />
+                        <span className="text-sm font-medium">
+                          {getTelecallerName(lead)}
+                        </span>
+                      </div>
                     </TableCell>
                     <TableCell>{getStatusBadge(lead.status)}</TableCell>
                     <TableCell className="text-right">
@@ -280,7 +323,14 @@ const fetchLeads = async (setLoading = false) => {
                                 View KYC/Details
                             </Link>
                           </DropdownMenuItem>
-                          {/* Add other actions here */}
+                          <DropdownMenuItem onClick={() => navigator.clipboard.writeText(lead.id)}>
+                            <Hash className="h-4 w-4 mr-2" />
+                            Copy Lead ID
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => navigator.clipboard.writeText(lead.phone)}>
+                            <Users className="h-4 w-4 mr-2" />
+                            Copy Phone
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -293,7 +343,8 @@ const fetchLeads = async (setLoading = false) => {
       </Card>
       
       <div className="text-center py-2 text-sm text-gray-600">
-        Displaying {filteredLeads.length} leads.
+        Displaying {filteredLeads.length} of {leads.length} leads
+        {statusFilter !== 'all' && ` (filtered by ${statusFilter})`}
       </div>
     </div>
   );
