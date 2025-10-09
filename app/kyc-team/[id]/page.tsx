@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Phone, Mail, MapPin, Calendar, MessageSquare, ArrowLeft, Clock, Save, User, DollarSign, Loader2, RefreshCw, XCircle, Building, Home, Briefcase, CreditCard } from "lucide-react";
+import { Phone, Mail, MapPin, Calendar, MessageSquare, ArrowLeft, Clock, Save, User, DollarSign, Loader2, RefreshCw, XCircle, Building, Home, Briefcase, CreditCard, Edit, Edit2, Edit3 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useCallback } from "react";
@@ -54,6 +54,14 @@ const OCCUPATION_OPTIONS = [
     { value: "private", label: "Private" },
     { value: "government", label: "Government" },
     { value: "public", label: "Public" }
+] as const;
+
+// Priority options
+const PRIORITY_OPTIONS = [
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "urgent", label: "Urgent" }
 ] as const;
 
 // Lead interface based on your full schema
@@ -135,7 +143,119 @@ const getStatusBadge = (status: string) => {
     }
 };
 
-// --- 2. INLINE STATUS UPDATER COMPONENT ---
+// --- 2. EDITABLE FIELD COMPONENTS ---
+
+interface EditableFieldProps {
+  label: string;
+  value: string | number | null;
+  onSave: (value: string | number | null) => void;
+  type?: 'text' | 'number' | 'email' | 'tel' | 'textarea';
+  placeholder?: string;
+  options?: { value: string; label: string }[];
+  className?: string;
+}
+
+const EditableField = ({ 
+  label, 
+  value, 
+  onSave, 
+  type = 'text', 
+  placeholder = '',
+  options,
+  className = ''
+}: EditableFieldProps) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(value || '');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    await onSave(type === 'number' && editValue !== '' ? Number(editValue) : editValue);
+    setIsSaving(false);
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditValue(value || '');
+    setIsEditing(false);
+  };
+
+  const displayValue = value || 'N/A';
+
+  return (
+    <div className={`flex flex-col space-y-2 p-3 bg-gray-50 rounded-lg ${className}`}>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium text-gray-500">{label}</p>
+        {!isEditing && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsEditing(true)}
+            className="h-6 w-6 p-0 hover:bg-gray-200"
+          >
+            <Edit2 className="h-3 w-3" />
+          </Button>
+        )}
+      </div>
+
+      {isEditing ? (
+        <div className="space-y-2">
+          {options ? (
+            <Select value={editValue as string} onValueChange={setEditValue}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={`Select ${label}`} />
+              </SelectTrigger>
+              <SelectContent>
+                {options.map(option => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : type === 'textarea' ? (
+            <Textarea
+              value={editValue as string}
+              onChange={(e) => setEditValue(e.target.value)}
+              placeholder={placeholder}
+              rows={3}
+            />
+          ) : (
+            <Input
+              type={type}
+              value={editValue as string}
+              onChange={(e) => setEditValue(e.target.value)}
+              placeholder={placeholder}
+              className="w-full"
+            />
+          )}
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              onClick={handleSave}
+              disabled={isSaving}
+              className="flex-1"
+            >
+              {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Save'}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleCancel}
+              disabled={isSaving}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-gray-800 break-words">{displayValue}</p>
+      )}
+    </div>
+  );
+};
+
+// --- 3. INLINE STATUS UPDATER COMPONENT ---
 
 interface LeadStatusUpdaterProps {
     leadId: string;
@@ -159,8 +279,6 @@ const LeadStatusUpdater = ({ leadId, currentStatus, onStatusUpdate }: LeadStatus
         }
 
         setIsUpdating(true);
-        // Note: For KYC users, we only allow updates to certain statuses. 
-        // We rely on RLS/Postgres policies to enforce which user can update which status.
         const { error } = await supabase
             .from('leads')
             .update({ status: newStatus, updated_at: new Date().toISOString() })
@@ -236,7 +354,7 @@ const LeadStatusUpdater = ({ leadId, currentStatus, onStatusUpdate }: LeadStatus
     );
 };
 
-// --- 3. MAIN LEAD PROFILE PAGE ---
+// --- 4. MAIN LEAD PROFILE PAGE ---
 
 interface LeadProfilePageProps {
   params: {
@@ -250,6 +368,7 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
   const [lead, setLead] = useState<Lead | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const supabase = createClient();
 
   const fetchLead = useCallback(async () => {
@@ -282,6 +401,28 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
     setIsLoading(false);
   }, [leadId, supabase]);
 
+  const updateField = async (field: keyof Lead, value: any) => {
+    if (!lead) return;
+
+    setIsSaving(true);
+    const { error } = await supabase
+      .from('leads')
+      .update({ 
+        [field]: value,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', leadId);
+
+    if (error) {
+      console.error(`Error updating ${field}:`, error);
+      // toast.error(`Failed to update ${field}`);
+    } else {
+      setLead(prev => prev ? { ...prev, [field]: value } : null);
+      // toast.success(`${field.replace('_', ' ')} updated successfully`);
+    }
+    setIsSaving(false);
+  };
+
   useEffect(() => {
     fetchLead();
 
@@ -294,7 +435,6 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
         { event: 'UPDATE', schema: 'public', table: 'leads', filter: `id=eq.${leadId}` },
         (payload) => {
           console.log("Real-time update received for lead:", payload.new);
-          // Only update the state with new data, which is most important for status
           setLead(prev => ({ ...(prev as Lead), ...(payload.new as Lead) }));
         }
       )
@@ -307,10 +447,8 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
   }, [leadId]); 
 
   const handleStatusUpdate = (newStatus: string) => {
-      // Update the local state instantly after successful update from LeadStatusUpdater
       setLead(prev => (prev ? { ...prev, status: newStatus } : null));
   };
-
 
   if (isLoading) {
     return (
@@ -366,15 +504,63 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <DetailItem icon={<Phone className="h-4 w-4 text-gray-500" />} label="Phone" value={lead.phone} />
-                    <DetailItem icon={<Mail className="h-4 w-4 text-gray-500" />} label="Email" value={lead.email || 'N/A'} />
-                    <DetailItem label="Alternative Mobile" value={lead.alternative_mobile || 'N/A'} />
-                    <DetailItem label="Personal Email" value={lead.personal_email || 'N/A'} />
-                    <DetailItem label="Gender" value={lead.gender ? lead.gender.charAt(0).toUpperCase() + lead.gender.slice(1) : 'N/A'} />
-                    <DetailItem label="Marital Status" value={lead.marital_status ? lead.marital_status.charAt(0).toUpperCase() + lead.marital_status.slice(1) : 'N/A'} />
-                    <DetailItem label="PAN Number" value={lead.pan_number || 'N/A'} />
-                    <DetailItem label="Application Number" value={lead.application_number || 'N/A'} />
-                    <DetailItem label="Telecaller Name" value={lead.telecaller_name || 'N/A'} />
+                    <EditableField 
+                        label="Name" 
+                        value={lead.name} 
+                        onSave={(value) => updateField('name', value)}
+                    />
+                    <EditableField 
+                        label="Phone" 
+                        value={lead.phone} 
+                        onSave={(value) => updateField('phone', value)}
+                        type="tel"
+                    />
+                    <EditableField 
+                        label="Email" 
+                        value={lead.email} 
+                        onSave={(value) => updateField('email', value)}
+                        type="email"
+                    />
+                    <EditableField 
+                        label="Alternative Mobile" 
+                        value={lead.alternative_mobile} 
+                        onSave={(value) => updateField('alternative_mobile', value)}
+                        type="tel"
+                    />
+                    <EditableField 
+                        label="Personal Email" 
+                        value={lead.personal_email} 
+                        onSave={(value) => updateField('personal_email', value)}
+                        type="email"
+                    />
+                    <EditableField 
+                        label="Gender" 
+                        value={lead.gender} 
+                        onSave={(value) => updateField('gender', value)}
+                        options={GENDER_OPTIONS}
+                    />
+                    <EditableField 
+                        label="Marital Status" 
+                        value={lead.marital_status} 
+                        onSave={(value) => updateField('marital_status', value)}
+                        options={MARITAL_STATUS_OPTIONS}
+                    />
+                    <EditableField 
+                        label="PAN Number" 
+                        value={lead.pan_number} 
+                        onSave={(value) => updateField('pan_number', value)}
+                        placeholder="Enter PAN number"
+                    />
+                    <EditableField 
+                        label="Application Number" 
+                        value={lead.application_number} 
+                        onSave={(value) => updateField('application_number', value)}
+                    />
+                    <EditableField 
+                        label="Telecaller Name" 
+                        value={lead.telecaller_name} 
+                        onSave={(value) => updateField('telecaller_name', value)}
+                    />
                 </CardContent>
             </Card>
 
@@ -387,14 +573,51 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <DetailItem label="Company" value={lead.company || 'N/A'} />
-                    <DetailItem label="Designation" value={lead.designation || 'N/A'} />
-                    <DetailItem label="Office Email" value={lead.office_email || 'N/A'} />
-                    <DetailItem label="Occupation" value={lead.occupation ? lead.occupation.charAt(0).toUpperCase() + lead.occupation.slice(1) : 'N/A'} />
-                    <DetailItem label="Experience" value={lead.experience ? `${lead.experience} years` : 'N/A'} />
-                    <DetailItem label="Nth Salary" value={lead.nth_salary ? formatCurrency(lead.nth_salary) : 'N/A'} />
-                    <DetailItem label="Lead Source" value={lead.source || 'N/A'} />
-                    <DetailItem label="Creation Date" value={new Date(lead.created_at).toLocaleDateString()} />
+                    <EditableField 
+                        label="Company" 
+                        value={lead.company} 
+                        onSave={(value) => updateField('company', value)}
+                    />
+                    <EditableField 
+                        label="Designation" 
+                        value={lead.designation} 
+                        onSave={(value) => updateField('designation', value)}
+                    />
+                    <EditableField 
+                        label="Office Email" 
+                        value={lead.office_email} 
+                        onSave={(value) => updateField('office_email', value)}
+                        type="email"
+                    />
+                    <EditableField 
+                        label="Occupation" 
+                        value={lead.occupation} 
+                        onSave={(value) => updateField('occupation', value)}
+                        options={OCCUPATION_OPTIONS}
+                    />
+                    <EditableField 
+                        label="Experience" 
+                        value={lead.experience} 
+                        onSave={(value) => updateField('experience', value)}
+                        type="number"
+                        placeholder="Years of experience"
+                    />
+                    <EditableField 
+                        label="Nth Salary" 
+                        value={lead.nth_salary} 
+                        onSave={(value) => updateField('nth_salary', value)}
+                        type="number"
+                        placeholder="Salary amount"
+                    />
+                    <EditableField 
+                        label="Lead Source" 
+                        value={lead.source} 
+                        onSave={(value) => updateField('source', value)}
+                    />
+                    <div className="flex flex-col space-y-1 p-3 bg-gray-50 rounded-lg">
+                        <p className="text-xs font-medium text-gray-500">Creation Date</p>
+                        <p className="text-sm text-gray-800">{new Date(lead.created_at).toLocaleDateString()}</p>
+                    </div>
                 </CardContent>
             </Card>
 
@@ -407,14 +630,55 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <DetailItem label="Loan Amount" value={formatCurrency(lead.loan_amount)} valueClass="font-bold text-lg text-green-700" />
-                    <DetailItem label="Disbursed Amount" value={formatCurrency(lead.disbursed_amount)} valueClass="font-bold text-lg text-blue-700" />
-                    <DetailItem label="Loan Type" value={lead.loan_type || 'N/A'} />
-                    <DetailItem label="ROI" value={formatPercentage(lead.roi)} />
-                    <DetailItem label="Tenure" value={lead.tenure ? `${lead.tenure} months` : 'N/A'} />
-                    <DetailItem label="Priority" value={<Badge variant="secondary" className={`capitalize ${lead.priority === 'urgent' ? 'bg-red-500 text-white' : lead.priority === 'high' ? 'bg-amber-500 text-white' : 'bg-gray-200'}`}>{lead.priority}</Badge>} />
-                    <DetailItem label="Assigned To" value={lead.assigned_to ? lead.assigned_to.substring(0, 8) + '...' : 'Unassigned'} />
-                    <DetailItem label="Current Status" value={getStatusBadge(lead.status)} valueClass="flex items-center" />
+                    <EditableField 
+                        label="Loan Amount" 
+                        value={lead.loan_amount} 
+                        onSave={(value) => updateField('loan_amount', value)}
+                        type="number"
+                        className="font-bold text-green-700"
+                    />
+                    <EditableField 
+                        label="Disbursed Amount" 
+                        value={lead.disbursed_amount} 
+                        onSave={(value) => updateField('disbursed_amount', value)}
+                        type="number"
+                        className="font-bold text-blue-700"
+                    />
+                    <EditableField 
+                        label="Loan Type" 
+                        value={lead.loan_type} 
+                        onSave={(value) => updateField('loan_type', value)}
+                    />
+                    <EditableField 
+                        label="ROI" 
+                        value={lead.roi} 
+                        onSave={(value) => updateField('roi', value)}
+                        type="number"
+                        placeholder="Rate of interest"
+                    />
+                    <EditableField 
+                        label="Tenure" 
+                        value={lead.tenure} 
+                        onSave={(value) => updateField('tenure', value)}
+                        type="number"
+                        placeholder="Months"
+                    />
+                    <EditableField 
+                        label="Priority" 
+                        value={lead.priority} 
+                        onSave={(value) => updateField('priority', value)}
+                        options={PRIORITY_OPTIONS}
+                    />
+                    <div className="flex flex-col space-y-1 p-3 bg-gray-50 rounded-lg">
+                        <p className="text-xs font-medium text-gray-500">Assigned To</p>
+                        <p className="text-sm text-gray-800">{lead.assigned_to ? lead.assigned_to.substring(0, 8) + '...' : 'Unassigned'}</p>
+                    </div>
+                    <div className="flex flex-col space-y-1 p-3 bg-gray-50 rounded-lg">
+                        <p className="text-xs font-medium text-gray-500">Current Status</p>
+                        <div className="flex items-center">
+                            {getStatusBadge(lead.status)}
+                        </div>
+                    </div>
                 </CardContent>
             </Card>
 
@@ -427,8 +691,18 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <DetailItem label="Bank Name" value={lead.bank_name || 'N/A'} />
-                    <DetailItem label="Account Number" value={lead.account_number ? '••••' + lead.account_number.slice(-4) : 'N/A'} />
+                    <EditableField 
+                        label="Bank Name" 
+                        value={lead.bank_name} 
+                        onSave={(value) => updateField('bank_name', value)}
+                    />
+                    <EditableField 
+                        label="Account Number" 
+                        value={lead.account_number} 
+                        onSave={(value) => updateField('account_number', value)}
+                        type="text"
+                        placeholder="Bank account number"
+                    />
                 </CardContent>
             </Card>
 
@@ -441,30 +715,51 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                        <h4 className="font-medium text-gray-700">Residence Address</h4>
-                        <p className="text-gray-700 bg-gray-50 p-3 rounded-lg">
-                            {lead.residence_address || 'N/A'}
-                        </p>
-                    </div>
-                    <div className="space-y-2">
-                        <h4 className="font-medium text-gray-700">Permanent Address</h4>
-                        <p className="text-gray-700 bg-gray-50 p-3 rounded-lg">
-                            {lead.permanent_address || 'N/A'}
-                        </p>
-                    </div>
-                    <div className="space-y-2">
-                        <h4 className="font-medium text-gray-700">Office Address</h4>
-                        <p className="text-gray-700 bg-gray-50 p-3 rounded-lg">
-                            {lead.office_address || 'N/A'}
-                        </p>
-                    </div>
+                    <EditableField 
+                        label="Residence Address" 
+                        value={lead.residence_address} 
+                        onSave={(value) => updateField('residence_address', value)}
+                        type="textarea"
+                    />
+                    <EditableField 
+                        label="Permanent Address" 
+                        value={lead.permanent_address} 
+                        onSave={(value) => updateField('permanent_address', value)}
+                        type="textarea"
+                    />
+                    <EditableField 
+                        label="Office Address" 
+                        value={lead.office_address} 
+                        onSave={(value) => updateField('office_address', value)}
+                        type="textarea"
+                    />
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                        <DetailItem label="Residence Type" value={lead.residence_type ? lead.residence_type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') : 'N/A'} />
-                        <DetailItem label="City" value={lead.city || 'N/A'} />
-                        <DetailItem label="State" value={lead.state || 'N/A'} />
-                        <DetailItem label="Country" value={lead.country || 'N/A'} />
-                        <DetailItem label="ZIP Code" value={lead.zip_code || 'N/A'} />
+                        <EditableField 
+                            label="Residence Type" 
+                            value={lead.residence_type} 
+                            onSave={(value) => updateField('residence_type', value)}
+                            options={RESIDENCE_TYPE_OPTIONS}
+                        />
+                        <EditableField 
+                            label="City" 
+                            value={lead.city} 
+                            onSave={(value) => updateField('city', value)}
+                        />
+                        <EditableField 
+                            label="State" 
+                            value={lead.state} 
+                            onSave={(value) => updateField('state', value)}
+                        />
+                        <EditableField 
+                            label="Country" 
+                            value={lead.country} 
+                            onSave={(value) => updateField('country', value)}
+                        />
+                        <EditableField 
+                            label="ZIP Code" 
+                            value={lead.zip_code} 
+                            onSave={(value) => updateField('zip_code', value)}
+                        />
                     </div>
                 </CardContent>
             </Card>
@@ -479,14 +774,13 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
                 onStatusUpdate={handleStatusUpdate}
             />
 
-            {/* Activity Tabs (Simplified stubs) */}
+            {/* Activity Tabs */}
             <Tabs defaultValue="timeline" className="w-full">
                 <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="timeline">Timeline</TabsTrigger>
                     <TabsTrigger value="notes">Notes/Calls</TabsTrigger>
                 </TabsList>
                 
-                {/* Timeline Content Stub */}
                 <TabsContent value="timeline">
                     <Card>
                         <CardHeader>
@@ -507,7 +801,6 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
                     </Card>
                 </TabsContent>
 
-                {/* Notes/Calls Content Stub */}
                 <TabsContent value="notes">
                     <Card>
                         <CardHeader>
@@ -525,21 +818,9 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
                         </CardContent>
                     </Card>
                 </TabsContent>
-
             </Tabs>
         </div>
       </div>
     </div>
   );
 }
-
-// Simple helper component for displaying details
-const DetailItem = ({ label, value, icon, valueClass = '' }: { label: string, value: React.ReactNode, icon?: React.ReactNode, valueClass?: string }) => (
-    <div className="flex flex-col space-y-1 p-2 bg-gray-50 rounded-lg">
-        <p className="text-xs font-medium text-gray-500">{label}</p>
-        <div className={`flex items-center gap-2 ${valueClass}`}>
-            {icon}
-            <span className="text-sm text-gray-800 break-words">{value}</span>
-        </div>
-    </div>
-);
