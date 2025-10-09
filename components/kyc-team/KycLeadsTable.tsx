@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Card } from "@/components/ui/card";
 
-// Updated Lead interface to include telecaller information
+// Updated Lead interface without telecaller information
 interface Lead {
   id: string;
   name: string;
@@ -24,7 +24,7 @@ interface Lead {
   status: string;
   created_at: string;
   assigned_to?: string;
-  }
+}
 
 interface KycLeadsTableProps {
     currentUserId: string;
@@ -75,13 +75,12 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
 
   const supabase = createClient();
 
-  // Updated Data Fetching function with telecaller information
+  // Updated Data Fetching function without telecaller information
   const fetchLeads = async (setLoading = false) => {
     if (setLoading) setIsLoading(true);
     
     let query = supabase
       .from("leads")
-      // Updated select to include telecaller information
       .select(`
         id, 
         name, 
@@ -89,7 +88,7 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
         loan_amount, 
         status, 
         created_at,
-        assigned_to,
+        assigned_to
       `)
       .eq("kyc_member_id", currentUserId)
       .order("created_at", { ascending: false });
@@ -155,15 +154,14 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
         (lead) => 
             lead.name.toLowerCase().includes(lowerCaseSearch) ||
             lead.phone.includes(lowerCaseSearch) ||
-            lead.id.toLowerCase().includes(lowerCaseSearch) ||
-            (lead.telecallers?.name && lead.telecallers.name.toLowerCase().includes(lowerCaseSearch))
+            lead.id.toLowerCase().includes(lowerCaseSearch)
     );
   }, [leads, searchTerm]);
 
-  // Function to display telecaller name
-  const getTelecallerName = (lead: Lead) => {
-    if (lead.telecallers?.name) {
-      return lead.telecallers.name;
+  // Function to display assigned to information
+  const getAssignedInfo = (lead: Lead) => {
+    if (lead.assigned_to) {
+      return `Assigned to: ${lead.assigned_to}`;
     }
     return "Unassigned";
   };
@@ -175,7 +173,7 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
         <div className="flex items-center space-x-2 w-full sm:w-1/2">
           <Search className="h-5 w-5 text-gray-400" />
           <Input
-            placeholder="Search by Name, Phone, ID, or Telecaller..."
+            placeholder="Search by Name, Phone, or ID..."
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
@@ -213,7 +211,7 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
                 <TableHead className="min-w-[150px]">Lead Name</TableHead>
                 <TableHead>Phone</TableHead>
                 <TableHead className="hidden sm:table-cell">Loan Amount</TableHead>
-                <TableHead>Telecaller</TableHead>
+                <TableHead>Assignment</TableHead>
                 <TableHead className="min-w-[140px]">Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -248,7 +246,7 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
                       <div className="flex items-center gap-2">
                         <User className="h-4 w-4 text-gray-500" />
                         <span className="text-sm font-medium">
-                          {getTelecallerName(lead)}
+                          {getAssignedInfo(lead)}
                         </span>
                       </div>
                     </TableCell>
