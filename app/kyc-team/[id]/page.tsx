@@ -7,78 +7,25 @@ import {
     Home, Users, Heart, Gavel, FileText
 } from "lucide-react";
 
-// --- START: Mock Supabase/Firestore Setup ---
-// FIX: Replaced NPM imports with Firebase CDN imports for single-file environment compatibility.
-// Use dynamic imports via <script> tags or relative paths if possible, but since 
-// we are in a single-file React component, we must mock/redefine the functions 
-// using the imported variables from the environment globals.
+// --- START: Firebase Global Declarations and Dynamic Loader ---
+// We use a React component wrapper to ensure the Firebase CDN scripts are loaded
+// before the application logic runs, making the functions globally available.
 
-// We assume the environment includes the necessary Firebase functions globally or 
-// that the compilation environment allows dynamic loading. Since direct imports fail, 
-// we'll rely on a strict mock structure and initialization.
-
-// Define global Firebase functions as they would be imported via CDN:
-// Note: In a real-world single-file React app, these would be loaded via <script> tags.
-// Here, we define them to satisfy the TypeScript checker and rely on the execution 
-// environment to provide the functionality via the global setup.
-
-declare function initializeApp(config: any): any;
-declare function getAuth(app: any): any;
-declare function signInAnonymously(auth: any): any;
-declare function signInWithCustomToken(auth: any, token: string): any;
-declare function getFirestore(app: any): any;
-declare function collection(db: any, ...paths: string[]): any;
-declare function query(collectionRef: any, ...queryConstraints: any[]): any;
-declare function where(field: string, op: string, value: any): any;
-declare function getDoc(docRef: any): any;
-declare function updateDoc(docRef: any, updates: any): any;
-declare function doc(db: any, ...paths: string[]): any;
-declare function onSnapshot(ref: any, onNext: any, onError: any): () => void;
-declare function setLogLevel(level: string): void;
-declare function getDocs(query: any): any;
-
-// Fallback implementation for when the functions are not available (should be handled by runtime)
-// If the global functions are not available, this component may fail at runtime, but it 
-// should pass the build phase now.
-if (typeof setLogLevel === 'undefined') {
-    const noop = () => {};
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const initializeApp = (config: any) => ({});
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const getAuth = (app: any) => ({});
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const signInAnonymously = (auth: any) => Promise.resolve({});
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const signInWithCustomToken = (auth: any, token: string) => Promise.resolve({});
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const getFirestore = (app: any) => ({});
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const collection = (db: any, ...paths: string[]) => ({});
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const query = (collectionRef: any, ...queryConstraints: any[]) => ({});
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const where = (field: string, op: string, value: any) => ({});
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const getDoc = (docRef: any) => Promise.resolve({ exists: () => false });
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const updateDoc = (docRef: any, updates: any) => Promise.resolve();
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const doc = (db: any, ...paths: string[]) => ({});
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const onSnapshot = (ref: any, onNext: any, onError: any) => noop;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const setLogLevel = (level: string) => {};
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const getDocs = (query: any) => Promise.resolve({ docs: [] });
-}
-
-
-try {
-  // Try to use the global function if it exists, otherwise rely on the mock/declaration
-  setLogLevel('Debug');
-} catch (e) {
-  // Ignore if setLogLevel is not defined yet
-}
+// 1. Declare global Firebase functions as they would be imported via CDN
+declare const initializeApp: (config: any) => any;
+declare const getAuth: (app: any) => any;
+declare const signInAnonymously: (auth: any) => any;
+declare const signInWithCustomToken: (auth: any, token: string) => any;
+declare const getFirestore: (app: any) => any;
+declare const collection: (db: any, ...paths: string[]) => any;
+declare const query: (collectionRef: any, ...queryConstraints: any[]) => any;
+declare const where: (field: string, op: string, value: any) => any;
+declare const getDoc: (docRef: any) => any;
+declare const updateDoc: (docRef: any, updates: any) => any;
+declare const doc: (db: any, ...paths: string[]) => any;
+declare const onSnapshot: (ref: any, onNext: any, onError: any) => () => void;
+declare const setLogLevel: (level: string) => void;
+declare const getDocs: (query: any) => any;
 
 // Global variables provided by the Canvas environment
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -88,11 +35,27 @@ const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial
 let dbInstance: any = null;
 let authInstance: any = null;
 let currentUserIdRef: string | null = null;
+let isFirebaseInitialized = false;
 
 const initializeFirebase = async () => {
-    if (dbInstance && authInstance) return;
+    if (isFirebaseInitialized) return;
 
+    // Wait until global functions are available (after CDN load)
+    if (typeof initializeApp === 'undefined') {
+        console.warn("initializeApp not yet available globally. Waiting...");
+        // In a real execution environment, the CDN load will resolve this.
+        // We rely on the environment's global scope being populated.
+        // If this still fails, the CDN loading needs to be checked externally.
+        if (typeof window !== 'undefined' && window.setTimeout) {
+             await new Promise(resolve => setTimeout(resolve, 500));
+        } else {
+             console.error("Firebase functions are not globally available. Cannot initialize.");
+             return;
+        }
+    }
+    
     try {
+        setLogLevel('Debug');
         const app = initializeApp(firebaseConfig);
         dbInstance = getFirestore(app);
         authInstance = getAuth(app);
@@ -103,6 +66,7 @@ const initializeFirebase = async () => {
             await signInAnonymously(authInstance);
         }
         currentUserIdRef = authInstance.currentUser?.uid || crypto.randomUUID();
+        isFirebaseInitialized = true;
         console.log("Firebase initialized. User ID:", currentUserIdRef);
 
     } catch (error) {
@@ -128,12 +92,14 @@ const createClient = () => {
                 eq: (key: string, value: string) => ({
                     single: async () => {
                         try {
+                            // Try fetching by doc ID first (most efficient)
                             const leadDocRef = doc(getLeadsCollection(), value);
                             const docSnap = await getDoc(leadDocRef);
                             
                             if (docSnap.exists()) {
                                 return { data: { id: docSnap.id, ...docSnap.data() }, error: null };
                             } else {
+                                // Fallback: Query by field if doc ID failed (less efficient)
                                 const q = query(getLeadsCollection(), where(key, '==', value));
                                 const snapshot = await getDocs(q);
                                 if (snapshot.docs.length > 0) {
@@ -152,6 +118,7 @@ const createClient = () => {
                 eq: (key: string, value: string) => ({
                     get: async () => {
                         try {
+                            // We assume 'value' is the lead ID when 'key' is 'id'
                             const leadDocRef = doc(getLeadsCollection(), value);
                             await updateDoc(leadDocRef, { ...updates, updated_at: new Date().toISOString() } as any);
                             return { error: null };
@@ -192,7 +159,7 @@ const createClient = () => {
         })
     };
 };
-// --- END: Mock Supabase/Firestore Setup ---
+// --- END: Firebase Global Declarations and Dynamic Loader ---
 
 // Import necessary UI components (assuming they are available or mocked by the environment)
 const Card = ({ children, className = "" }: { children: React.ReactNode, className?: string }) => <div className={`bg-white rounded-xl shadow-lg border border-gray-100 p-6 ${className}`}>{children}</div>;
@@ -442,6 +409,8 @@ const EditableField = <T extends keyof Lead>({
                     </Select>
                 );
             case 'number':
+                // Use type="text" with inputMode="numeric" for better cross-browser compatibility 
+                // and to prevent browser default number step controls.
                 return <Input {...commonProps} type="text" inputMode="numeric" pattern="[0-9]*" />;
             default: // text, email, tel
                 return <Input {...commonProps} type={type} maxLength={maxLength} />;
@@ -461,7 +430,7 @@ const EditableField = <T extends keyof Lead>({
 };
 
 
-// --- 3. MAIN LEAD PROFILE PAGE ---
+// --- 3. MAIN LEAD PROFILE PAGE COMPONENT ---
 
 interface LeadProfilePageProps {
   params: {
@@ -469,7 +438,7 @@ interface LeadProfilePageProps {
   };
 }
 
-export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
+function LeadProfileContent({ params }: LeadProfilePageProps) {
   const router = { back: () => console.log('Simulating router back') }; // Mock router for this single-file environment
   const leadId = params.id;
   const [lead, setLead] = useState<Lead | null>(null);
@@ -477,15 +446,26 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
   const [error, setError] = useState<string | null>(null);
   const [supabaseClient, setSupabaseClient] = useState<ReturnType<typeof createClient> | null>(null);
   const [currentTab, setCurrentTab] = useState('kyc_details'); // Default tab
+  
+  // State to track Firebase initialization readiness
+  const [isFirebaseReady, setIsFirebaseReady] = useState(false);
+
 
   useEffect(() => {
     const init = async () => {
-        await initializeFirebase();
-        const client = createClient();
-        setSupabaseClient(client);
+        // Wait for initializeFirebase to complete and set global instances
+        await initializeFirebase(); 
+        setIsFirebaseReady(true);
     };
     init();
   }, []);
+
+  useEffect(() => {
+      if (isFirebaseReady) {
+          const client = createClient();
+          setSupabaseClient(client);
+      }
+  }, [isFirebaseReady]);
 
   const ALL_FIELDS_STRING = [
     'id', 'name', 'phone', 'loan_amount', 'status', 'created_at', 'updated_at',
@@ -517,7 +497,12 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
       const defaultLead: Partial<Lead> = {
           pan_number: null, monthly_salary: null, residence_type: null, 
           priority: null, assigned_to: null, updated_at: new Date().toISOString(),
-          // ... add all other fields not guaranteed by the DB
+          personal_email: null, alt_phone: null, gender: null, marital_status: null,
+          application_number: null, residence_address: null, permanent_address: null, office_address: null,
+          occupation: null, designation: null, office_email: null, years_of_experience: null,
+          disbursed_amount: null, roi_percent: null, loan_tenure_months: null, bank_name: null, account_number: null,
+          telecaller_name: null, loan_amount: null, status: 'UNKNOWN', created_at: new Date().toISOString()
+          // ... added all missing fields for type safety
       };
       setLead({ ...defaultLead, ...data } as Lead);
     }
@@ -552,6 +537,7 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
 
     return () => {
         // Assuming the mock unsubscribe works
+        // The mock setup returns an object with unsubscribe
         if (subscription && typeof subscription.unsubscribe === 'function') {
             subscription.unsubscribe();
         }
@@ -566,7 +552,8 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
       
       const updateQuery = supabaseClient
           .from('leads')
-          .update({ [field]: value })
+          // Firestore uses null for deletion of a field, which is acceptable for optional fields
+          .update({ [field]: value === '' ? null : value }) 
           .eq('id', id);
 
       const { error } = await updateQuery.get(); 
@@ -802,4 +789,71 @@ export default function KycLeadProfilePage({ params }: LeadProfilePageProps) {
       </div>
     </div>
   );
+}
+
+// --- 4. EXPORT WRAPPER TO ENSURE CDN LOAD ---
+
+export default function KycLeadProfilePage(props: LeadProfilePageProps) {
+    const [isLoaded, setIsLoaded] = useState(false);
+    
+    // Dynamically load Firebase SDK via script tags
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        const firebaseScripts = [
+            "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js",
+            "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js",
+            "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js",
+        ];
+        
+        let loadedCount = 0;
+        const totalScripts = firebaseScripts.length;
+
+        const loadScript = (url: string) => {
+            const script = document.createElement('script');
+            script.src = url;
+            script.type = 'text/javascript';
+            script.onload = () => {
+                loadedCount++;
+                if (loadedCount === totalScripts) {
+                    // All scripts loaded successfully
+                    setIsLoaded(true);
+                }
+            };
+            script.onerror = () => {
+                console.error(`Failed to load Firebase script: ${url}`);
+                // In case of error, we still try to proceed, but log the issue
+                loadedCount++;
+                if (loadedCount === totalScripts) {
+                    setIsLoaded(true);
+                }
+            };
+            document.head.appendChild(script);
+        };
+
+        firebaseScripts.forEach(loadScript);
+        
+        // Cleanup function (optional, as these scripts usually stay loaded)
+        return () => {
+            firebaseScripts.forEach(url => {
+                const existingScript = document.querySelector(`script[src="${url}"]`);
+                if (existingScript) {
+                    // Commenting out removal to prevent issues with other components
+                    // existingScript.remove();
+                }
+            });
+        };
+    }, []);
+
+    if (!isLoaded) {
+        return (
+            <div className="flex items-center justify-center h-screen">
+                <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+                <p className="ml-2 text-lg text-gray-600">Loading Firebase SDK...</p>
+            </div>
+        );
+    }
+    
+    // Once CDN scripts are confirmed loaded, render the actual content
+    return <LeadProfileContent {...props} />;
 }
