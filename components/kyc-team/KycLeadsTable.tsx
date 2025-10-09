@@ -23,6 +23,12 @@ interface Lead {
   loan_amount: number | null;
   status: string;
   created_at: string;
+  // --- NEW FIELDS ADDED ---
+  pan_number: string | null;
+  application_number: string | null;
+  disbursed_amount: number | null; // For Disbursed Amount
+  gender: 'MALE' | 'FEMALE' | 'OTHER' | null; // For Gender
+  // --- END NEW FIELDS ---
 }
 
 interface KycLeadsTableProps {
@@ -82,7 +88,10 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
     let query = supabase
       .from("leads")
       // CRITICAL: Selecting all relevant columns based on the full schema
-      .select("id, name, phone, loan_amount, status, created_at") 
+      .select(`
+        id, name, phone, loan_amount, status, created_at,
+        pan_number, application_number, disbursed_amount, gender
+      `) 
       .eq("kyc_member_id", currentUserId)
       .order("created_at", { ascending: false }); // Using available 'created_at' column
 
@@ -100,6 +109,13 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
     }
     if (setLoading) setIsLoading(false);
   };
+  
+  // NOTE on other fields: residence address, permanent address, office address, nth salary, 
+  // office mail id, mail id, Roi(in percentage), tenure, marital status, residence type, 
+  // experience, occupation, designation, alternative mobile number, bank name, account number, 
+  // and telecaller name are typically detailed information. To keep the table manageable, 
+  // they are best added to the Supabase select statement but displayed only on the 
+  // individual lead details page (/kyc-team/${lead.id}).
 
   // 2. Real-time Listener and Initial Load
   useEffect(() => {
@@ -147,7 +163,9 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
         (lead) => 
             lead.name.toLowerCase().includes(lowerCaseSearch) ||
             lead.phone.includes(lowerCaseSearch) ||
-            lead.id.toLowerCase().includes(lowerCaseSearch)
+            lead.id.toLowerCase().includes(lowerCaseSearch) ||
+            lead.pan_number?.toLowerCase().includes(lowerCaseSearch) || // Search by PAN
+            lead.application_number?.toLowerCase().includes(lowerCaseSearch) // Search by Application Number
     );
   }, [leads, searchTerm]);
 
@@ -160,7 +178,7 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
         <div className="flex items-center space-x-2 w-full sm:w-1/2">
           <Search className="h-5 w-5 text-gray-400" />
           <Input
-            placeholder="Search by Name, Phone, or ID..."
+            placeholder="Search by Name, Phone, PAN, or Application No..."
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
@@ -197,7 +215,11 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
               <TableRow className="bg-gray-50">
                 <TableHead className="min-w-[150px]">Lead Name</TableHead>
                 <TableHead>Phone</TableHead>
-                <TableHead className="hidden sm:table-cell">Loan Amount</TableHead>
+                <TableHead className="hidden sm:table-cell">App No</TableHead> {/* Application Number */}
+                <TableHead className="hidden md:table-cell">PAN</TableHead> {/* PAN Number */}
+                <TableHead className="hidden lg:table-cell">Gender</TableHead> {/* Gender */}
+                <TableHead>Loan Req</TableHead> {/* Loan Amount */}
+                <TableHead>Disbursed</TableHead> {/* Disbursed Amount */}
                 <TableHead className="min-w-[140px]">Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -205,14 +227,14 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
             <TableBody>
               {isLoading && filteredLeads.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center">
+                  <TableCell colSpan={9} className="h-24 text-center">
                     <Loader2 className="w-6 h-6 animate-spin mx-auto text-purple-500" />
                     <p className="mt-2 text-gray-600">Loading leads...</p>
                   </TableCell>
                 </TableRow>
               ) : filteredLeads.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center text-gray-500">
+                  <TableCell colSpan={9} className="h-24 text-center text-gray-500">
                     <Users className="w-6 h-6 mx-auto mb-2"/>
                     No assigned leads found matching your filters.
                   </TableCell>
@@ -225,8 +247,14 @@ export default function KycLeadsTable({ currentUserId, initialStatus }: KycLeads
                       <p className="text-xs text-gray-500 mt-0.5">ID: {lead.id.substring(0, 8)}</p>
                     </TableCell>
                     <TableCell>{lead.phone}</TableCell>
-                    <TableCell className="hidden sm:table-cell font-semibold">
+                    <TableCell className="hidden sm:table-cell text-xs">{lead.application_number || 'N/A'}</TableCell>
+                    <TableCell className="hidden md:table-cell text-xs">{lead.pan_number || 'N/A'}</TableCell>
+                    <TableCell className="hidden lg:table-cell text-xs">{lead.gender || 'N/A'}</TableCell>
+                    <TableCell className="font-semibold text-xs">
                         {formatCurrency(lead.loan_amount)}
+                    </TableCell>
+                    <TableCell className="font-bold text-green-600 text-xs">
+                        {formatCurrency(lead.disbursed_amount)}
                     </TableCell>
                     <TableCell>{getStatusBadge(lead.status)}</TableCell>
                     <TableCell className="text-right">
