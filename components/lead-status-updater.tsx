@@ -24,6 +24,9 @@ interface LeadStatusUpdaterProps {
   isCallInitiated?: boolean // New prop to indicate if this is for a call
   onCallLogged?: (callLogId: string) => void // New prop to notify when call is logged
   initialLoanAmount?: number | null // New prop for initial loan amount
+  // NEW REQUIRED PROPS for WhatsApp functionality
+  leadPhoneNumber: string 
+  telecallerName: string
 }
 
 const statusOptions = [
@@ -47,13 +50,15 @@ export function LeadStatusUpdater({
   isCallInitiated = false,
   onCallLogged,
   initialLoanAmount = null,
+  // DESTRUCTURE NEW PROPS
+  leadPhoneNumber,
+  telecallerName,
 }: LeadStatusUpdaterProps) {
   // Status always starts as "" to force selection, even when isCallInitiated.
   const [status, setStatus] = useState("")
   const [isUpdating, setIsUpdating] = useState(false)
   const [note, setNote] = useState("") 
   const [remarks, setRemarks] = useState("")
-  // REMOVED: const [callNotes, setCallNotes] = useState("")
   // MODIFIED: callDuration initialized to null instead of 0
   const [callDuration, setCallDuration] = useState<number | null>(null)
   const [loanAmount, setLoanAmount] = useState<number | null>(initialLoanAmount)
@@ -67,6 +72,25 @@ export function LeadStatusUpdater({
 
   const supabase = createClient()
   const { activeCall, startCall, endCall, updateCallDuration, formatDuration } = useCallTracking()
+
+  // CONSTANT FOR WHATSAPP MESSAGE
+  const WHATSAPP_MESSAGE_BASE = "hi sir this side {telecaller_name} from ICICI bank kindly share following documents";
+
+
+  // NEW FUNCTION: Constructs the WhatsApp URL
+  const getWhatsappLink = () => {
+      // Remove all non-digit characters from the phone number
+      const cleanedNumber = leadPhoneNumber.replace(/[^0-9]/g, '');
+      
+      // Replace placeholder and URL encode the message
+      const message = WHATSAPP_MESSAGE_BASE.replace("{telecaller_name}", telecallerName)
+      const encodedMessage = encodeURIComponent(message)
+      
+      // WhatsApp URL format: https://wa.me/countrycode+number?text=message
+      // Assuming leadPhoneNumber already includes the country code for a direct link.
+      return `https://wa.me/${cleanedNumber}?text=${encodedMessage}`
+  }
+
 
   useEffect(() => {
     setLoanAmount(initialLoanAmount)
@@ -269,7 +293,6 @@ export function LeadStatusUpdater({
       // Reset form
       setNote("")
       setRemarks("")
-      // REMOVED: setCallNotes("")
       // MODIFIED: Reset callDuration to null AND new minute/second state
       setCallDuration(null)
       setCallMins(null)
@@ -369,10 +392,24 @@ export function LeadStatusUpdater({
 
   return (
     <Card>
-      <CardHeader>
+      {/* MODIFIED: Added flex and justify-between for the WhatsApp icon */}
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-lg">
           {isCallInitiated ? "Log Call & Update Status" : "Lead Status"}
         </CardTitle>
+
+        {/* NEW: WHATSAPP ICON */}
+        <a 
+            href={getWhatsappLink()} 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            title="Send WhatsApp Message for Documents"
+            className="flex items-center justify-center p-1 rounded-full bg-green-500 hover:bg-green-600 transition-colors shadow-md"
+        >
+            {/* Using MessageSquare icon and styling it white on a green background */}
+            <MessageSquare className="h-4 w-4 text-white" /> 
+        </a>
+
       </CardHeader>
       <CardContent className="space-y-4 max-h-[80vh] overflow-y-auto">
         <div className="flex items-center gap-2">
