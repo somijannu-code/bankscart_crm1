@@ -48,14 +48,13 @@ export function LeadStatusUpdater({
   onCallLogged,
   initialLoanAmount = null,
 }: LeadStatusUpdaterProps) {
-  // Status always starts as "" to force selection.
+  // Status always starts as "" to force selection, even when isCallInitiated.
   const [status, setStatus] = useState("")
   const [isUpdating, setIsUpdating] = useState(false)
   const [note, setNote] = useState("") 
   const [remarks, setRemarks] = useState("")
   const [callNotes, setCallNotes] = useState("")
-  // MODIFIED: Initialize to null to ensure duration is mandatory
-  const [callDuration, setCallDuration] = useState<number | null>(null)
+  const [callDuration, setCallDuration] = useState(0)
   const [loanAmount, setLoanAmount] = useState<number | null>(initialLoanAmount)
   const [isModalOpen, setIsModalOpen] = useState(false) 
   // Keep tempStatus initialized to currentStatus for the modal logic when it opens
@@ -67,19 +66,6 @@ export function LeadStatusUpdater({
   useEffect(() => {
     setLoanAmount(initialLoanAmount)
   }, [initialLoanAmount])
-  
-  // NEW EFFECT: Auto-fill 0 for call duration only when 'NR' status is selected.
-  useEffect(() => {
-    if (isCallInitiated) {
-      if (status === "nr") {
-        setCallDuration(0)
-      } else if (status !== "nr" && callDuration === 0) {
-        // Clear duration if it was 0 and status changed from 'nr'
-        setCallDuration(null)
-      }
-    }
-  }, [status, isCallInitiated])
-
 
   // NEW FUNCTION: Updates only the status to 'follow_up' after modal success
   const updateLeadStatusToFollowUp = async () => {
@@ -139,28 +125,8 @@ export function LeadStatusUpdater({
       })
       return
     }
-    
-    // CHECK 2 (Call Duration Mandatory for Call Logging):
-    if (isCallInitiated) {
-      const isDurationMissing = callDuration === null
-      const isDurationZeroAndNotNR = callDuration === 0 && status !== "nr"
-      
-      if (isDurationMissing) {
-        toast.error("Validation Failed", {
-          description: "Call Duration is required for logging a call."
-        })
-        return
-      }
-      if (isDurationZeroAndNotNR) {
-        toast.error("Validation Failed", {
-          description: "Call Duration must be greater than 0 for statuses other than 'NR'."
-        })
-        return
-      }
-    }
 
-
-    // CHECK 3 (Not Eligible Reason):
+    // CHECK 2 (Not Eligible Reason):
     if (isNotEligible && isNoteEmpty) {
       toast.error("Validation Failed", {
         description: "Please specify the 'Reason for Not Eligible' before updating the status."
@@ -168,7 +134,7 @@ export function LeadStatusUpdater({
       return 
     }
     
-    // CHECK 4 (Follow Up):
+    // CHECK 3 (Follow Up):
     if (status === "follow_up") {
       // Re-open the modal if the user tries to click the button without going through the modal
       if (!isModalOpen) {
@@ -226,8 +192,8 @@ export function LeadStatusUpdater({
       setNote("")
       setRemarks("")
       setCallNotes("")
-      setCallDuration(null) // Reset to null
-      
+      setCallDuration(0)
+
       // Set status back to empty string after success for subsequent mandatory selection.
       setStatus("")
       
@@ -244,9 +210,7 @@ export function LeadStatusUpdater({
   }
 
   const logCall = async () => {
-    // MODIFIED: Use the stored callDuration for logging
-    const durationToLog = callDuration !== null ? callDuration : 0 
-    
+    // ... (logCall remains unchanged)
     try {
       const {
         data: { user },
@@ -257,9 +221,8 @@ export function LeadStatusUpdater({
         return
       }
 
-      let duration = durationToLog
+      let duration = callDuration
       if (activeCall && activeCall.leadId === leadId) {
-        // If an active call is ongoing, update its duration before logging
         duration = await updateCallDuration(leadId, "")
       }
 
@@ -305,21 +268,12 @@ export function LeadStatusUpdater({
   // Logic to determine if the update button should be disabled
   const isFormInvalid = (status === "not_eligible" && !note.trim()) || (status === "follow_up" && !isCallInitiated)
 
-  // NEW CHECK: Duration must be valid for call logging
-  const isDurationInvalid = 
-    isCallInitiated && (
-      callDuration === null || // Duration must be entered
-      (callDuration <= 0 && status !== "nr") // Duration must be > 0 unless status is NR
-    )
-
-
   const isButtonDisabled = 
     isUpdating || 
     status === "" || // MANDATORY SELECTION: Disabled if no status is selected
-    isDurationInvalid || // NEW: Disabled if call duration is invalid
-    (status === currentStatus && !isCallInitiated && status !== "follow_up") || 
+    (status === currentStatus && !isCallInitiated && status !== "follow_up") || // Still disable if status hasn't changed AND no call was initiated (standard update logic)
     isFormInvalid || 
-    status === "follow_up" 
+    status === "follow_up" // Disabled if 'follow_up' is selected (update happens via modal success)
 
 
   return (
@@ -336,6 +290,8 @@ export function LeadStatusUpdater({
           <Badge className={currentStatusOption?.color}>{currentStatusOption?.label}</Badge>
         </div>
 
+        {/* REMOVED: The informational text box that was here */}
+        
         <div className="space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Update Status:</label>
@@ -420,32 +376,20 @@ export function LeadStatusUpdater({
             <div className="space-y-2">
               <label className="text-sm font-medium flex items-center gap-2">
                 <Clock className="h-4 w-4" />
-                Call Duration (seconds): <span className="text-red-500">*</span>
+                Call Duration (seconds):
               </label>
               <Input
                 type="number"
-                placeholder={status === "nr" ? "0 (Auto-filled for NR)" : "Enter call duration (> 0)"}
-                // MODIFIED: Use null check for value display
-                value={callDuration !== null ? String(callDuration) : ""}
-                onChange={(e) => {
-                  const value = e.target.value
-                  // MODIFIED: Update state to null if input is empty, otherwise update number
-                  setCallDuration(value === "" ? null : Number(value))
-                }}
-                min={status === "nr" ? "0" : "1"}
-                disabled={status === "nr"} // Disable if status is NR (auto-filled)
-                className={cn(isDurationInvalid && "border-red-500")}
+                placeholder="Enter call duration in seconds"
+                value={callDuration}
+                onChange={(e) => setCallDuration(Number(e.target.value))}
+                min="0"
               />
               {activeCall && activeCall.leadId === leadId && (
                 <div className="text-sm text-green-600">
                   Current call timer: {formatDuration(activeCall.timer)}
                 </div>
               )}
-               {isCallInitiated && isDurationInvalid && (
-                  <p className="text-sm text-red-500">
-                      Duration is required. It must be greater than 0 unless status is 'NR'.
-                  </p>
-               )}
             </div>
           )}
 
@@ -494,7 +438,7 @@ export function LeadStatusUpdater({
           )}
         </div>
       </CardContent>
-      {/* ScheduleFollowUpModal Integration */}
+      {/* NEW: ScheduleFollowUpModal Integration */}
       <ScheduleFollowUpModal
         open={isModalOpen}
         onOpenChange={(open) => {
@@ -502,8 +446,6 @@ export function LeadStatusUpdater({
           // If modal is closed, status reverts to "" (unselected)
           if (!open) {
             setStatus("") 
-            // Reset duration as well if status is reset
-            if (isCallInitiated) setCallDuration(null)
           }
         }}
         onScheduleSuccess={() => {
