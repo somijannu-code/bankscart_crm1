@@ -23,7 +23,7 @@ interface DashboardStats {
   icon: React.ComponentType<any>
   color: string
   bgColor: string
-  format?: "number" | "percentage" | "duration"
+  format?: "number" | "percentage" | "duration" | "callShortage" // Added "callShortage"
 }
 
 interface DashboardData {
@@ -41,6 +41,9 @@ export default function TelecallerDashboard() {
     isLoading: true,
     error: null
   })
+
+  // Fixed daily call target
+  const DAILY_CALL_TARGET = 350; 
 
   useEffect(() => {
     async function loadDashboardData() {
@@ -101,6 +104,10 @@ export default function TelecallerDashboard() {
         const pendingFollowUps = getCount(pendingFollowUpsResponse)
         const completedToday = getCount(completedTodayResponse)
 
+        // Calculate Call Shortage
+        const callShortage = DAILY_CALL_TARGET - todaysCalls;
+        const isTargetMet = callShortage <= 0;
+
         // Calculate simple metrics (avoid complex queries that might fail)
         const conversionRate = todaysCalls > 0 ? Math.round((completedToday / todaysCalls) * 100) : 0
         const successRate = (completedToday + todaysCalls) > 0 
@@ -115,12 +122,15 @@ export default function TelecallerDashboard() {
             color: "text-blue-600",
             bgColor: "bg-blue-50",
           },
+          // UPDATED STAT: Today Calls Shortage
           {
-            title: "Today's Calls",
-            value: todaysCalls,
+            title: "Today Calls Shortage",
+            value: callShortage,
             icon: Phone,
-            color: "text-green-600",
-            bgColor: "bg-green-50",
+            // Dynamic colors based on target status
+            color: isTargetMet ? "text-green-600" : "text-red-600",
+            bgColor: isTargetMet ? "bg-green-50" : "bg-red-50",
+            format: "callShortage",
           },
           {
             title: "Pending Follow-ups",
@@ -187,6 +197,16 @@ export default function TelecallerDashboard() {
   const formatValue = (stat: DashboardStats) => {
     if (stat.format === "percentage") return `${stat.value}%`
     if (stat.format === "duration") return `${stat.value}m`
+    
+    // NEW LOGIC for "callShortage"
+    if (stat.format === "callShortage") {
+      const shortage = Number(stat.value);
+      if (shortage <= 0) {
+        return "0 (Congratulations!)";
+      }
+      return stat.value.toString();
+    }
+    
     return stat.value.toString()
   }
 
@@ -262,7 +282,8 @@ export default function TelecallerDashboard() {
                     <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">
                       {stat.title}
                     </p>
-                    <p className="text-2xl font-bold text-gray-900 mt-1">
+                    {/* The text color is handled dynamically via stat.color */}
+                    <p className={`text-2xl font-bold mt-1 ${stat.color}`}> 
                       {formatValue(stat)}
                     </p>
                   </div>
@@ -354,7 +375,7 @@ export default function TelecallerDashboard() {
               daily_completed: 20,
               monthly_target: 1000
             }}
-            currentCalls={typeof data.stats[1]?.value === 'number' ? data.stats[1].value : 0}
+            currentCalls={typeof data.stats[1]?.value === 'number' ? DAILY_CALL_TARGET - data.stats[1].value : 0} // Pass the actual calls count
             currentCompleted={typeof data.stats[3]?.value === 'number' ? data.stats[3].value : 0}
           />
         </ErrorBoundary>
