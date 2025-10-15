@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Phone, Users, Calendar, CheckCircle, Clock, TrendingUp, Target, BarChart3, RefreshCw, Plus } from "lucide-react"
 import { TodaysTasks } from "@/components/todays-tasks"
-import { RecentLeads } from "@/components/recent-leads"
+import { RecentLeads } from "@/components/recent-leads" // Import is kept but component is removed
 import { useRouter } from "next/navigation"
 import { AttendanceWidget } from "@/components/attendance-widget"
 import { NotificationProvider } from "@/components/notification-provider"
@@ -23,7 +23,7 @@ interface DashboardStats {
   icon: React.ComponentType<any>
   color: string
   bgColor: string
-  format?: "number" | "percentage" | "duration" | "callShortage" // Added "callShortage"
+  format?: "number" | "percentage" | "duration" | "callShortage" 
 }
 
 interface DashboardData {
@@ -312,8 +312,8 @@ export default function TelecallerDashboard() {
         </ErrorBoundary>
 
         {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Today's Tasks */}
+        <div className="grid grid-cols-1 lg:grid-cols-1 gap-6"> 
+          {/* Today's Tasks (Now full-width on large screens) */}
           <Card className="border">
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -339,31 +339,8 @@ export default function TelecallerDashboard() {
             </CardContent>
           </Card>
 
-          {/* Recent Leads */}
-          <Card className="border">
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <TrendingUp className="h-5 w-5" />
-                Recent Leads
-              </CardTitle>
-              <Button variant="ghost" size="sm" className="text-xs">
-                View All
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <ErrorBoundary 
-                fallback={
-                  <EmptyState
-                    icon={Users}
-                    title="Unable to load leads"
-                    description="Please try refreshing the page"
-                  />
-                }
-              >
-                <RecentLeads userId={data.user.id} />
-              </ErrorBoundary>
-            </CardContent>
-          </Card>
+          {/* Removed Recent Leads Card */}
+
         </div>
 
         {/* Daily Target Progress - Only show if targets table exists */}
@@ -371,11 +348,12 @@ export default function TelecallerDashboard() {
           <DailyTargetProgress 
             userId={data.user.id} 
             targets={{
-              daily_calls: 50,
+              daily_calls: 350,
               daily_completed: 20,
-              monthly_target: 1000
+              monthly_target: 10000
             }}
-            currentCalls={typeof data.stats[1]?.value === 'number' ? DAILY_CALL_TARGET - data.stats[1].value : 0} // Pass the actual calls count
+            // Calculate actual calls from shortage stat
+            currentCalls={typeof data.stats[1]?.value === 'number' ? DAILY_CALL_TARGET - data.stats[1].value : 0} 
             currentCompleted={typeof data.stats[3]?.value === 'number' ? data.stats[3].value : 0}
           />
         </ErrorBoundary>
