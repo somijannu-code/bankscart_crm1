@@ -5,7 +5,8 @@ import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { 
   User, Building, Calendar, Clock, Eye, Phone, Mail, 
-  Search, Filter, ChevronDown, ChevronUp, Download 
+  Search, Filter, ChevronDown, ChevronUp, Download,
+  MessageSquare // <--- ADDED ICON IMPORT
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -74,6 +75,26 @@ export function TelecallerLeadsTable({
   // Add safe value getters
   const getSafeValue = (value: any, defaultValue: string = 'N/A') => {
     return value ?? defaultValue
+  }
+
+  // Define the telecaller name placeholder
+  // NOTE: Replace "{TELECALLER_NAME}" with the actual telecaller's name dynamically.
+  const TELECALLER_NAME = "{TELECALLER_NAME}" 
+
+  // Function to generate the WhatsApp link
+  const getWhatsAppLink = (phoneNumber: string) => {
+    // Remove non-digit characters and ensure it's a valid number format
+    const cleanedPhone = phoneNumber.replace(/\D/g, '')
+
+    // Pre-filled message with the placeholder for the telecaller's name
+    const message = `Hi sir, this side ${TELECALLER_NAME} from ICICI bank. Kindly share following documents.`
+    
+    // Encode the message for the URL
+    const encodedMessage = encodeURIComponent(message)
+    
+    // Construct the WhatsApp URL
+    // It's common practice to use wa.me or api.whatsapp.com
+    return `https://wa.me/${cleanedPhone}?text=${encodedMessage}`
   }
 
   // Filter and sort leads
@@ -337,7 +358,6 @@ export function TelecallerLeadsTable({
         <Table>
           <TableHeader>
             <TableRow>
-              {/* === FIX APPLIED: Contact column moved before Name column === */}
               {visibleColumns.contact && <TableHead>Contact</TableHead>}
               {visibleColumns.name && (
                 <TableHead 
@@ -347,7 +367,6 @@ export function TelecallerLeadsTable({
                   Name {sortField === 'name' && (sortDirection === 'asc' ? <ChevronUp className="inline h-4 w-4" /> : <ChevronDown className="inline h-4 w-4" />)}
                 </TableHead>
               )}
-              {/* ========================================================== */}
               {visibleColumns.company && (
                 <TableHead 
                   className="cursor-pointer" 
@@ -390,7 +409,6 @@ export function TelecallerLeadsTable({
           <TableBody>
             {filteredLeads.map((lead) => (
               <TableRow key={lead.id} className="cursor-pointer hover:bg-gray-50">
-                {/* === FIX APPLIED: Contact cell moved before Name cell === */}
                 {visibleColumns.contact && (
                   <TableCell>
                     <QuickActions
@@ -406,10 +424,24 @@ export function TelecallerLeadsTable({
                     <Link href={`/telecaller/leads/${lead.id}`} className="flex items-center gap-2">
                       <User className="h-4 w-4" />
                       {getSafeValue(lead.name, 'Unknown')}
+                      
+                      {/* === ADDED WHATSAPP ICON === */}
+                      {lead.phone && (
+                        <a 
+                          href={getWhatsAppLink(lead.phone)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-green-500 hover:text-green-600 transition-colors ml-1"
+                          onClick={(e) => e.stopPropagation()} // Prevent row click event
+                          title="WhatsApp Chat"
+                        >
+                          <MessageSquare className="h-4 w-4" />
+                        </a>
+                      )}
+                      {/* ============================= */}
                     </Link>
                   </TableCell>
                 )}
-                {/* ========================================================== */}
                 {visibleColumns.company && (
                   <TableCell>
                     <div className="flex items-center gap-2">
