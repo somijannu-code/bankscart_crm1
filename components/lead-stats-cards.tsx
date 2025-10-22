@@ -7,7 +7,7 @@ interface LeadStats {
   contacted: number
   qualified: number
   converted: number
-  interested: number
+  Interested: number
 }
 
 interface LeadStatsCardsProps {
@@ -37,7 +37,7 @@ const statConfigs = [
     bgColor: 'bg-purple-50'
   },
   {
-    key: 'interested' as const,
+    key: 'Interested' as const,
     title: 'High Priority',
     icon: Star,
     color: 'text-red-600',
