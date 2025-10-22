@@ -7,7 +7,7 @@ interface LeadStats {
   contacted: number
   qualified: number
   converted: number
-  highPriority: number
+  interested: number
 }
 
 interface LeadStatsCardsProps {
