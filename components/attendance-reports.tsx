@@ -7,8 +7,8 @@ import {
   endOfMonth, 
   subMonths, 
   addMonths, 
-  eachDayOfInterval, // 💡 NEW IMPORT: For counting working days
-  isWeekend,          // 💡 NEW IMPORT: For counting working days
+  eachDayOfInterval,
+  isWeekend,
   parseISO, 
   differenceInDays 
 } from "date-fns";
@@ -61,14 +61,12 @@ import {
   Cell
 } from "recharts";
 
-// 💡 NEW HELPER FUNCTION: Calculates the actual number of working days (Mon-Fri) in the range.
+// 💡 HELPER FUNCTION: Calculates the actual number of working days (Mon-Fri) in the range.
 const getWorkingDaysCount = (start: Date, end: Date): number => {
   let count = 0;
-  // Use eachDayOfInterval to iterate over all days in the range
   const days = eachDayOfInterval({ start, end });
   
   for (const day of days) {
-    // isWeekend returns true for Saturday (6) and Sunday (0)
     if (!isWeekend(day)) {
       count++;
     }
@@ -78,6 +76,35 @@ const getWorkingDaysCount = (start: Date, end: Date): number => {
 
 // 🎯 LATE CUTOFF TIME: Used for dynamic calculation (HH:mm:ss format)
 const LATE_CUTOFF_TIME = '09:30:00'; 
+
+// 🎯 NEW HELPER FUNCTION: Converts an array of objects to a CSV string.
+const convertToCsv = (data: any[], headers: string[], keys: string[]): string => {
+  if (data.length === 0) return '';
+  
+  // 1. Create the header row
+  const headerRow = headers.join(',');
+  
+  // 2. Create the data rows
+  const csvRows = data.map(row => {
+    return keys.map(key => {
+      let value = row[key];
+      // Handle formatting for currency and time
+      if (key === 'baseSalary' || key === 'totalPay') {
+          value = Math.round(value).toLocaleString('en-IN', { minimumFractionDigits: 0 });
+      } else if (key === 'totalHours' || key === 'overtimeHours') {
+          value = value.toFixed(1);
+      }
+      
+      if (typeof value === 'string') {
+        value = value.replace(/"/g, '""'); // Escape double quotes
+        if (value.includes(',')) value = `"${value}"`; // Quote if it contains a comma
+      }
+      return value;
+    }).join(',');
+  });
+  
+  return [headerRow, ...csvRows].join('\n');
+};
 
 export function AttendanceReports() {
   const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>({
@@ -94,12 +121,11 @@ export function AttendanceReports() {
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const supabase = createClient();
 
-  // 1. Prepare Chart Data (unchanged)
   const prepareChartData = useCallback((data: any[]) => {
     const groupedByDate: Record<string, { present: number; absent: number; late: number }> = {};
     
     data.forEach(record => {
-      // 💡 NEW: Apply dynamic late check before charting
+      // Apply dynamic late check
       const isCheckInLate = record.check_in_time && record.check_in_time > LATE_CUTOFF_TIME;
       if (isCheckInLate && record.status === 'present') {
         record.status = 'late';
@@ -115,7 +141,7 @@ export function AttendanceReports() {
           break;
         case 'late':
           groupedByDate[record.date].late++;
-          groupedByDate[record.date].present++; // Late is still present
+          groupedByDate[record.date].present++; 
           break;
         case 'absent':
           groupedByDate[record.date].absent++;
@@ -133,7 +159,6 @@ export function AttendanceReports() {
     setChartData(chartData);
   }, [setChartData]);
 
-  // 2. Prepare Trend Data (updated for dynamic late check)
   const prepareTrendData = useCallback((data: any[]) => {
     const punctualityData: any[] = [];
     const absenteeismData: any[] = [];
@@ -141,7 +166,7 @@ export function AttendanceReports() {
     const weeks: Record<string, { present: number; late: number; absent: number; total: number }> = {};
     
     data.forEach(record => {
-      // 💡 NEW: Apply dynamic late check
+      // Apply dynamic late check
       const isCheckInLate = record.check_in_time && record.check_in_time > LATE_CUTOFF_TIME;
       if (isCheckInLate && record.status === 'present') {
         record.status = 'late';
@@ -169,7 +194,7 @@ export function AttendanceReports() {
           break;
         case 'late':
           weeks[weekKey].late++;
-          weeks[weekKey].present++; // Late is still present
+          weeks[weekKey].present++; 
           break;
         case 'absent':
           weeks[weekKey].absent++;
@@ -179,7 +204,6 @@ export function AttendanceReports() {
     
     // Convert to trend data
     Object.entries(weeks).forEach(([week, counts]) => {
-      // Adjusted punctuality rate logic to reflect on-time vs total present records
       const punctualityRate = (counts.present + counts.late) > 0 ?
         Math.round((counts.present / (counts.present + counts.late)) * 100) : 0;
       
@@ -200,9 +224,9 @@ export function AttendanceReports() {
     setTrendData([{ punctuality: punctualityData, absenteeism: absenteeismData }]);
   }, [setTrendData]);
 
-  // 3. 🎯 CRITICAL FIX: Payroll Logic
+  // 🎯 CRITICAL FIX: Payroll Logic
   const preparePayrollData = useCallback((attendanceData: any[], usersData: any[], totalExpectedWorkingDays: number) => {
-    const overtimeRate = 200; // ₹200 per hour
+    const overtimeRate = 200; 
 
     const payrollMap: Record<string, any> = {};
     const attendanceSummary: Record<string, { presentDays: number; lateDays: number; explicitAbsentDays: number }> = {};
@@ -233,10 +257,9 @@ export function AttendanceReports() {
       const empPayroll = payrollMap[record.user_id];
       if (!empSummary || !empPayroll) return;
       
-      // 🎯 FIX A: Check if a record is implicitly late based on check-in time
+      // FIX A: Check if a record is implicitly late based on check-in time
       const isCheckInLate = record.check_in_time && record.check_in_time > LATE_CUTOFF_TIME;
       if (isCheckInLate && record.status === 'present') {
-          // Temporarily set the status to 'late' for the purpose of this calculation
           record.status = 'late';
       }
 
@@ -246,8 +269,8 @@ export function AttendanceReports() {
           empSummary.presentDays++;
           break;
         case 'late':
-          empSummary.lateDays++;      // 🎯 FIXED: Late is counted here
-          empSummary.presentDays++;   // Late is counted as a present day for overall attendance
+          empSummary.lateDays++;      
+          empSummary.presentDays++;   
           break;
         case 'absent':
         case 'leave':
@@ -275,7 +298,7 @@ export function AttendanceReports() {
       emp.presentDays = stats.presentDays;
       emp.lateDays = stats.lateDays;
 
-      // 🎯 FIX B: Calculate Implicit Absent Days
+      // FIX B: Calculate Implicit Absent Days
       const totalAttendedOrExplicitAbsent = stats.presentDays + stats.explicitAbsentDays;
       emp.absentDays = Math.max(0, totalExpectedWorkingDays - totalAttendedOrExplicitAbsent); 
 
@@ -290,11 +313,11 @@ export function AttendanceReports() {
     setPayrollData(Object.values(payrollMap));
   }, [setPayrollData]);
 
-  // 4. Load Data (updated to get totalExpectedWorkingDays)
+  // Load Data (updated to get totalExpectedWorkingDays)
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      // 🎯 STEP 1: Calculate the total expected working days (Mon-Fri) in the range
+      // STEP 1: Calculate the total expected working days (Mon-Fri) in the range
       const totalExpectedWorkingDays = getWorkingDaysCount(dateRange.start, dateRange.end);
 
       // Fetch users
@@ -314,7 +337,6 @@ export function AttendanceReports() {
       setUsers(usersData || []);
 
       // Fetch attendance data
-      // Assume 'check_in_time' is available via '*' select
       const { data: attendanceData, error: attendanceError } = await supabase
         .from("attendance")
         .select(`
@@ -328,11 +350,11 @@ export function AttendanceReports() {
       if (attendanceError) throw attendanceError;
       setAttendanceData(attendanceData || []);
 
-      // Prepare chart data using stable helper functions
+      // Prepare chart and trend data
       prepareChartData(attendanceData || []);
       prepareTrendData(attendanceData || []);
       
-      // 🎯 STEP 2: Pass the calculated working days to the payroll function
+      // STEP 2: Pass the calculated working days to the payroll function
       preparePayrollData(attendanceData || [], usersData || [], totalExpectedWorkingDays);
 
     } catch (error) {
@@ -351,13 +373,11 @@ export function AttendanceReports() {
     preparePayrollData
   ]);
 
-  // 5. useEffect and other helpers (unchanged, ensuring loadData stability)
+  // ... (useEffect and navigation functions remain the same) ...
   useEffect(() => {
     loadData();
     
-    // Real-time subscription setup (removed for brevity but remains the same as your file)
-    // ...
-    
+    // Real-time subscription setup
     const attendanceChannel = supabase
       .channel('attendance-changes')
       .on(
@@ -433,13 +453,11 @@ export function AttendanceReports() {
       ? Math.round((presentRecords / totalAttendanceRecords) * 100)
       : 0;
     
-    // Calculate average punctuality
     const totalPresentRecords = processedAttendance.filter(a => 
       a.status === 'present' || a.status === 'late'
     ).length;
     const lateRecords = processedAttendance.filter(a => a.status === 'late').length;
     
-    // Punctuality = On Time / Total Positive Attendance
     const punctualityRate = totalPresentRecords > 0 
       ? Math.round(((totalPresentRecords - lateRecords) / totalPresentRecords) * 100)
       : 0;
@@ -453,14 +471,51 @@ export function AttendanceReports() {
     };
   };
 
-  const exportReport = async (format: 'csv' | 'excel' | 'pdf') => {
-    try {
-      console.log(`Exporting report in ${format} format`);
-      alert(`Exporting report in ${format.toUpperCase()} format. In a real application, this would download the file.`);
-    } catch (error) {
-      console.error("Export failed:", error);
+  // 🎯 FIXED EXPORT FUNCTION
+  const exportReport = useCallback(async (formatType: 'csv' | 'excel' | 'pdf') => {
+    if (formatType !== 'csv') {
+        alert(`Export to ${formatType.toUpperCase()} is not yet implemented. Please select CSV.`);
+        return;
     }
-  };
+
+    try {
+        let dataToExport: any[] = [];
+        let filename = 'attendance-report';
+        let headers: string[] = [];
+        let keys: string[] = [];
+        const dateString = format(dateRange.start, 'MMM-yyyy');
+
+        // Determine which data to export based on the current report view
+        if (reportType === 'payroll' && payrollData.length > 0) {
+            dataToExport = payrollData;
+            filename = `payroll-report-${dateString}`;
+            headers = ['Name', 'Department', 'Present Days', 'Late Days', 'Absent Days', 'Total Hours', 'Overtime Hours', 'Base Salary (₹)', 'Overtime Rate (₹/hr)', 'Total Pay (₹)'];
+            keys = ['name', 'department', 'presentDays', 'lateDays', 'absentDays', 'totalHours', 'overtimeHours', 'baseSalary', 'overtimeRate', 'totalPay'];
+        } 
+        // You can add more 'else if' blocks here for 'detailed', 'summary', etc.
+        else {
+            alert(`No data available to export for the ${reportType} report or no export logic implemented.`);
+            return;
+        }
+
+        const csvString = convertToCsv(dataToExport, headers, keys);
+        
+        // Trigger the download
+        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `${filename}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+    } catch (error) {
+        console.error("Export failed:", error);
+        alert("Export failed due to an unexpected error.");
+    }
+  }, [payrollData, reportType, dateRange]);
+
 
   const navigateDateRange = (direction: 'prev' | 'next') => {
     const newStart = direction === 'prev' 
@@ -474,6 +529,7 @@ export function AttendanceReports() {
   };
 
   const stats = calculateSummaryStats();
+  
   const departments = Array.from(new Set(users.map(user => user.department).filter(Boolean))) as string[];
 
   if (loading) {
@@ -789,7 +845,7 @@ export function AttendanceReports() {
                 {users.map(user => {
                   const userRecords = attendanceData.filter(a => a.user_id === user.id);
                   
-                  // 💡 NEW: Apply dynamic late check for the detailed view
+                  // Apply dynamic late check for the detailed view
                   const processedRecords = userRecords.map(record => {
                     const isCheckInLate = record.check_in_time && record.check_in_time > LATE_CUTOFF_TIME;
                     if (isCheckInLate && record.status === 'present') {
