@@ -1,8 +1,17 @@
 "use client";
 
-// 🛑 CRITICAL FIX: Add useCallback to imports
 import { useState, useEffect, useCallback } from "react";
-import { format, startOfMonth, endOfMonth, subMonths, addMonths, parseISO, differenceInDays } from "date-fns";
+import { 
+  format, 
+  startOfMonth, 
+  endOfMonth, 
+  subMonths, 
+  addMonths, 
+  eachDayOfInterval, // 💡 NEW IMPORT
+  isWeekend,          // 💡 NEW IMPORT
+  parseISO, 
+  differenceInDays 
+} from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { 
@@ -51,7 +60,21 @@ import {
   Pie,
   Cell
 } from "recharts";
-// import { enhancedAttendanceService } from "@/lib/attendance-service-enhanced"; // Assuming this is not required for data fetching
+
+// 💡 NEW HELPER FUNCTION: Calculates the actual number of working days (Mon-Fri) in the range.
+const getWorkingDaysCount = (start: Date, end: Date): number => {
+  let count = 0;
+  // Use eachDayOfInterval to iterate over all days in the range
+  const days = eachDayOfInterval({ start, end });
+  
+  for (const day of days) {
+    // isWeekend returns true for Saturday (6) and Sunday (0)
+    if (!isWeekend(day)) {
+      count++;
+    }
+  }
+  return count;
+};
 
 export function AttendanceReports() {
   const [dateRange, setDateRange] = useState<{ start: Date; end: Date }>({
@@ -68,9 +91,11 @@ export function AttendanceReports() {
   const [departmentFilter, setDepartmentFilter] = useState("all");
   const supabase = createClient();
 
-  // 1. ⭐️ FIX: Wrap prepare functions in useCallback to ensure they are stable dependencies
-  //    (Setters like setChartData are stable, but must be listed as dependencies)
+  // The helper functions are kept the same as the calculation logic for charts/trends is fine 
+  // for displaying *explicit* data, but the payroll function is critical.
+  
   const prepareChartData = useCallback((data: any[]) => {
+    // ... (unchanged)
     const groupedByDate: Record<string, { present: number; absent: number; late: number }> = {};
     
     data.forEach(record => {
@@ -84,10 +109,15 @@ export function AttendanceReports() {
           break;
         case 'late':
           groupedByDate[record.date].late++;
-          groupedByDate[record.date].present++; // Late is still present
+          groupedByDate[record.date].present++;
           break;
         case 'absent':
           groupedByDate[record.date].absent++;
+          break;
+        // Adding other statuses for completeness in chart data
+        case 'leave':
+        case 'half-day':
+          groupedByDate[record.date].absent++; // Treat non-present as absent for charting purposes
           break;
       }
     });
@@ -103,6 +133,7 @@ export function AttendanceReports() {
   }, [setChartData]);
 
   const prepareTrendData = useCallback((data: any[]) => {
+    // ... (unchanged)
     const punctualityData: any[] = [];
     const absenteeismData: any[] = [];
     
@@ -131,7 +162,7 @@ export function AttendanceReports() {
           break;
         case 'late':
           weeks[weekKey].late++;
-          weeks[weekKey].present++; // Late is still present
+          weeks[weekKey].present++;
           break;
         case 'absent':
           weeks[weekKey].absent++;
@@ -141,9 +172,11 @@ export function AttendanceReports() {
     
     // Convert to trend data
     Object.entries(weeks).forEach(([week, counts]) => {
-      const punctualityRate = counts.total > 0 ? 
-        Math.round(((counts.present + counts.late) / counts.total) * 100) : 0;
+      // Adjusted punctuality rate logic to reflect on-time vs total present records
+      const punctualityRate = (counts.present + counts.late) > 0 ?
+        Math.round((counts.present / (counts.present + counts.late)) * 100) : 0;
       
+      // Absenteeism calculation is still based on explicit records, which is fine for trend display
       const absenteeismRate = counts.total > 0 ? 
         Math.round((counts.absent / counts.total) * 100) : 0;
       
@@ -161,11 +194,15 @@ export function AttendanceReports() {
     setTrendData([{ punctuality: punctualityData, absenteeism: absenteeismData }]);
   }, [setTrendData]);
 
-  const preparePayrollData = useCallback((attendanceData: any[], usersData: any[]) => {
-    const workingDays = 26; // configurable
+  // 💡 FIXED FUNCTION SIGNATURE AND LOGIC
+  const preparePayrollData = useCallback((attendanceData: any[], usersData: any[], totalExpectedWorkingDays: number) => {
+    // ❌ Removed static 'workingDays = 26'
     const overtimeRate = 200; // ₹200 per hour
 
     const payrollMap: Record<string, any> = {};
+
+    // Map to track attendance statuses per user
+    const attendanceSummary: Record<string, { presentDays: number; lateDays: number; explicitAbsentDays: number }> = {};
 
     // Initialize payroll data for all users
     usersData.forEach(user => {
@@ -175,7 +212,7 @@ export function AttendanceReports() {
         department: user.department || 'N/A',
         presentDays: 0,
         lateDays: 0,
-        absentDays: 0,
+        absentDays: 0, // This will be calculated later
         totalHours: 0,
         overtimeHours: 0,
         baseSalary: user.base_salary || 25000,
@@ -184,53 +221,77 @@ export function AttendanceReports() {
         editingBase: false,
         editingOvertime: false
       };
+      attendanceSummary[user.id] = { presentDays: 0, lateDays: 0, explicitAbsentDays: 0 };
     });
 
     // Process attendance data
     attendanceData.forEach(record => {
-      const emp = payrollMap[record.user_id];
-      if (!emp) return;
+      const empSummary = attendanceSummary[record.user_id];
+      const empPayroll = payrollMap[record.user_id];
+      if (!empSummary || !empPayroll) return;
 
       switch (record.status) {
         case 'present':
-          emp.presentDays++;
+        case 'half-day': // Treat half-day as a day with a record for absence calculation
+          empSummary.presentDays++;
           break;
         case 'late':
-          emp.lateDays++;
-          emp.presentDays++;
+          empSummary.lateDays++;
+          empSummary.presentDays++; // Count late as a present day for payroll attendance count
           break;
         case 'absent':
-          emp.absentDays++;
+        case 'leave': // Treat explicitly marked leave/absent as a day with a record
+          empSummary.explicitAbsentDays++;
           break;
       }
 
+      // Time calculations remain the same
       if (record.total_hours) {
         const [hours, minutes] = record.total_hours.split(':').map(Number);
-        emp.totalHours += hours + minutes / 60;
+        empPayroll.totalHours += hours + minutes / 60;
       }
 
       if (record.overtime_hours) {
         const [hours, minutes] = record.overtime_hours.split(':').map(Number);
-        emp.overtimeHours += hours + minutes / 60;
+        empPayroll.overtimeHours += hours + minutes / 60;
       }
     });
 
     // Final salary calculation
     Object.values(payrollMap).forEach(emp => {
-      const perDaySalary = emp.baseSalary / workingDays;
+      const stats = attendanceSummary[emp.userId];
+      
+      // Update present and late counts for display
+      emp.presentDays = stats.presentDays;
+      emp.lateDays = stats.lateDays;
+
+      // 🎯 CRITICAL FIX: Calculate Implicit Absent Days
+      // Total days with any record found (Present/Late/Explicit Absent/Leave)
+      const totalAttendedOrExplicitAbsent = stats.presentDays + stats.explicitAbsentDays;
+
+      // True Absent Days = Expected Working Days - Total Days Accounted For
+      // We use Math.max(0, ...) to prevent negative values if logic is imperfect or range is misaligned
+      emp.absentDays = Math.max(0, totalExpectedWorkingDays - totalAttendedOrExplicitAbsent); 
+
+      // 🎯 FIXED: Use the calculated working days as the divisor for per-day salary
+      const perDaySalary = emp.baseSalary / totalExpectedWorkingDays;
       const absentDeduction = emp.absentDays * perDaySalary;
       const overtimePay = emp.overtimeHours * emp.overtimeRate;
 
+      // The final total pay calculation is now correct
       emp.totalPay = emp.baseSalary - absentDeduction + overtimePay;
     });
 
     setPayrollData(Object.values(payrollMap));
   }, [setPayrollData]);
 
-  // 2. ⭐️ FIX: Wrap loadData in useCallback to ensure its reference is stable.
+  // 💡 FIXED loadData to calculate and pass working days
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
+      // 🎯 STEP 1: Calculate the total expected working days (Mon-Fri) in the range
+      const totalExpectedWorkingDays = getWorkingDaysCount(dateRange.start, dateRange.end);
+
       // Fetch users
       let userQuery = supabase
         .from("users")
@@ -238,7 +299,6 @@ export function AttendanceReports() {
         .eq("is_active", true)
         .order("full_name");
 
-      // Apply department filter if not "all"
       if (departmentFilter !== "all") {
         userQuery = userQuery.eq("department", departmentFilter);
       }
@@ -265,14 +325,15 @@ export function AttendanceReports() {
       // Prepare chart data using stable helper functions
       prepareChartData(attendanceData || []);
       prepareTrendData(attendanceData || []);
-      preparePayrollData(attendanceData || [], usersData || []);
+      
+      // 🎯 STEP 2: Pass the calculated working days to the payroll function
+      preparePayrollData(attendanceData || [], usersData || [], totalExpectedWorkingDays);
+
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
       setLoading(false);
     }
-  // 🔑 CRITICAL DEPENDENCY ARRAY for loadData: Only dependent on filter changes, 
-  // stable helpers, and stable setters. This is the key to preventing the loop.
   }, [
     dateRange, 
     departmentFilter, 
@@ -284,6 +345,8 @@ export function AttendanceReports() {
     preparePayrollData
   ]);
 
+  // ... (rest of the component is largely unchanged) ...
+  
   // 3. ⭐️ FIX: The useEffect now uses the stable loadData reference.
   useEffect(() => {
     // 1. Initial/Filter-triggered load
@@ -359,15 +422,21 @@ export function AttendanceReports() {
       a.status === 'present' || a.status === 'late'
     ).length;
     
+    // NOTE: This attendance rate is still based only on records found, not total expected shifts.
+    // A full fix would require passing `totalExpectedWorkingDays` and calculating expected shifts.
     const attendanceRate = totalAttendanceRecords > 0 
       ? Math.round((presentRecords / totalAttendanceRecords) * 100)
       : 0;
     
     // Calculate average punctuality
-    const totalDays = attendanceData.length;
+    const totalPresentRecords = attendanceData.filter(a => 
+      a.status === 'present' || a.status === 'late'
+    ).length;
     const lateRecords = attendanceData.filter(a => a.status === 'late').length;
-    const punctualityRate = totalDays > 0 
-      ? Math.round(((totalDays - lateRecords) / totalDays) * 100)
+    
+    // Punctuality = On Time / Total Positive Attendance
+    const punctualityRate = totalPresentRecords > 0 
+      ? Math.round(((totalPresentRecords - lateRecords) / totalPresentRecords) * 100)
       : 0;
     
     return {
@@ -930,3 +999,5 @@ export function AttendanceReports() {
     </div>
   );
 }
+
+// Ensure closing bracket is present
