@@ -111,7 +111,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
   })
   const [currentPage, setCurrentPage] = useState(1)
   // UPDATED: Initial page size to 20, but now changeable
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(200)
   const [selectedLeads, setSelectedLeads] = useState<string[]>([])
   
   // --- KEEPING ORIGINAL BULK ASSIGN STATE ---
