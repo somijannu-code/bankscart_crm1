@@ -158,6 +158,10 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
   const [showDuplicatesDialog, setShowDuplicatesDialog] = useState(false)
   
   const supabase = createClient()
+  
+  // --- NEW STATE: Last Call Times ---
+  const [lastCallTimestamps, setLastCallTimestamps] = useState<Record<string, string | null>>({})
+  // -----------------------------------
 
   // Stabilize telecaller IDs array
   const allTelecallerIds = useMemo(() => {
@@ -169,6 +173,49 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
   }, [leads, telecallers])
 
   const { telecallerStatus, loading: statusLoading } = useTelecallerStatus(allTelecallerIds)
+  
+  // --- NEW EFFECT: Fetch Last Call Times from call_logs ---
+  useEffect(() => {
+    const fetchLastCallTimes = async () => {
+      const leadIds = leads.map(l => l.id);
+      if (leadIds.length === 0) return;
+
+      try {
+        // Fetch all call logs for the current set of leads, ordered by creation time descending.
+        // The first log for a given lead_id will be the latest call.
+        const { data: callLogs, error } = await supabase
+          .from("call_logs")
+          .select("lead_id, created_at")
+          .in("lead_id", leadIds)
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          console.error("Error fetching call logs for last contact:", error);
+          return;
+        }
+        
+        const latestCalls: Record<string, string | null> = {};
+        const seenLeadIds = new Set<string>();
+
+        // Process logs to find the single latest call time per lead
+        for (const log of callLogs) {
+          if (!seenLeadIds.has(log.lead_id)) {
+            latestCalls[log.lead_id] = log.created_at;
+            seenLeadIds.add(log.lead_id);
+          }
+        }
+
+        setLastCallTimestamps(latestCalls);
+
+      } catch (error) {
+        console.error("An error occurred during call log fetch:", error);
+      }
+    };
+
+    fetchLastCallTimes();
+  }, [leads, supabase]);
+  // --------------------------------------------------------
+
 
   // Calculate Lead Score (0-100)
   const calculateLeadScore = (lead: Lead): number => {
@@ -1369,7 +1416,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                     onClick={() => handleSort('last_contacted')}
                   >
                     <div className="flex items-center gap-1">
-                      Last Contact
+                      Last Call
                       {sortField === 'last_contacted' && (
                         sortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
                       )}
@@ -1536,24 +1583,32 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                     
                     {visibleColumns.lastContacted && (
                       <TableCell>
-                        {lead.last_contacted ? (
-                          <div className="flex items-center gap-1">
-                            <Clock className="h-3 w-3 text-muted-foreground" />
-                            <span className="text-sm">
-                              {/* UPDATED: Use toLocaleString to include time */}
-                              {new Date(lead.last_contacted).toLocaleString(undefined, {
-                                year: 'numeric',
-                                month: 'numeric',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                hour12: true, // Use 12-hour clock (AM/PM)
-                              })}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">Never</span>
-                        )}
+                        {/* UPDATED LOGIC: 
+                           1. Prioritize the last call time fetched from call_logs (lastCallTimestamps[lead.id]).
+                           2. Fallback to the lead.last_contacted field (general update time).
+                        */}
+                        {(() => {
+                          const lastContactTimestamp = lastCallTimestamps[lead.id] || lead.last_contacted;
+                          
+                          if (lastContactTimestamp) {
+                            return (
+                              <div className="flex items-center gap-1">
+                                <Clock className="h-3 w-3 text-muted-foreground" />
+                                <span className="text-sm">
+                                  {new Date(lastContactTimestamp).toLocaleString(undefined, {
+                                    year: 'numeric',
+                                    month: 'numeric',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    hour12: true, // Use 12-hour clock (AM/PM)
+                                  })}
+                                </span>
+                              </div>
+                            );
+                          }
+                          return <span className="text-sm text-muted-foreground">Never</span>;
+                        })()}
                       </TableCell>
                     )}
                     
