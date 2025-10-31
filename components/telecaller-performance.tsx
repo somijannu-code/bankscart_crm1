@@ -170,8 +170,20 @@ export function TelecallerPerformance({ startDate, endDate, telecallerId }: Tele
           })
         }
 
-        // Sort by total calls descending
-        performanceData.sort((a, b) => b.totalCalls - a.totalCalls)
+        // --- FINAL UPDATED SORTING LOGIC ---
+        // 1. Sort by isCheckedIn (true comes before false, so Checked In telecallers are listed first)
+        // 2. Then, sort by totalCalls descending (highest calls first)
+        performanceData.sort((a, b) => {
+          // Primary sort: isCheckedIn (true before false)
+          if (a.isCheckedIn !== b.isCheckedIn) {
+            // Return 1 if b is true, -1 if a is true. This ensures true comes first.
+            return b.isCheckedIn ? 1 : -1
+          }
+          
+          // Secondary sort: totalCalls descending (highest calls first)
+          return b.totalCalls - a.totalCalls
+        })
+
         setData(performanceData)
       } catch (error) {
         console.error("Error fetching telecaller performance:", error)
