@@ -179,6 +179,20 @@ export function LeadStatusUpdater({
         
       if (error) throw error
       
+      // LOG STATUS CHANGE NOTE FOR FOLLOW_UP
+      const { data: userData } = await supabase.auth.getUser()
+      if (userData?.user) {
+          const statusChangeNoteContent = `Status changed from ${currentStatus} to follow_up (Call Back).`
+          const { error: noteError } = await supabase.from("notes").insert({
+              lead_id: leadId,
+              user_id: userData.user.id,
+              content: statusChangeNoteContent,
+              note_type: "status_change", 
+          })
+
+          if (noteError) console.error("Error logging status change note for follow-up:", noteError)
+      }
+      
       // Update local state and notify parent
       setStatus("follow_up")
       onStatusUpdate?.("follow_up", note) 
@@ -280,6 +294,27 @@ export function LeadStatusUpdater({
             .eq("id", leadId)
 
           if (error) throw error
+          
+          // --- ADDED LOGIC FOR STATUS CHANGE NOTE ---
+          // Log status change if the status actually changed (excluding follow_up which is handled separately)
+          if (status !== currentStatus && status !== 'follow_up') {
+              const { data: userData } = await supabase.auth.getUser()
+
+              if (userData?.user) {
+                  const statusChangeNoteContent = `Status changed from ${currentStatus} to ${status}.`
+                  
+                  // Insert a special note for the status change
+                  const { error: noteError } = await supabase.from("notes").insert({
+                      lead_id: leadId,
+                      user_id: userData.user.id,
+                      content: statusChangeNoteContent,
+                      note_type: "status_change", // Critical for timeline recognition
+                  })
+
+                  if (noteError) console.error("Error logging status change note:", noteError)
+              }
+          }
+          // --- END ADDED LOGIC ---
           
           onStatusUpdate?.(status, note) 
       }
