@@ -1,4 +1,4 @@
-// This file runs entirely on the server to fetch data efficiently using Next.js Server Components.
+// This file runs entirely on the server to fetch data efficiently.
 
 import { createClient } from "@/lib/supabase/server";
 // Import UI components used in your other files (assuming shadcn/ui components)
@@ -8,8 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Users, BarChart3 } from "lucide-react";
 
 
-// Force dynamic rendering to prevent build errors related to data fetching 
-// and ensure the component runs fully on the server at request time.
+// CRITICAL FIX: Ensures this page runs dynamically at request time, 
+// preventing production build errors related to dynamic server usage.
 export const dynamic = 'force-dynamic';
 
 
@@ -35,41 +35,38 @@ interface TelecallerSummary {
 
 
 /**
- * FINAL REVISED & SAFE: Fetches lead counts by status with robust error handling.
+ * FINAL STABLE FUNCTION: Fetches all leads and processes the counts locally 
+ * in the server component. This bypasses RLS restrictions on aggregate queries.
  */
 async function getTelecallerLeadSummary(): Promise<TelecallerSummary[]> {
   try {
     const supabase = await createClient();
 
-    // 1. Fetch all users (telecallers) to get their full names and IDs
+    // 1. Fetch all users (telecallers)
     const { data: users, error: userError } = await supabase
       .from("users")
       .select("id, full_name");
     
     if (userError) {
-      console.error("CRITICAL DATA FETCH ERROR (Users):", userError);
+      console.error("Error fetching users:", userError);
       return []; 
     }
-
-    const telecallerIds = users.map(u => u.id);
-
-    // 2. Fetch the aggregate counts using 'in' filter and the count aggregate.
-    const { data: leadCountsRaw, error: countError } = await supabase
+    
+    // 2. Fetch ALL leads assigned to ANY user
+    const { data: leads, error: leadsError } = await supabase
       .from("leads")
-      .in('assigned_to', telecallerIds) 
-      .select("assigned_to, status, count") 
-      .returns<Array<{ assigned_to: string, status: string, count: number }>>()
-      
-    if (countError) {
-      console.error("CRITICAL DATA FETCH ERROR (Lead Counts):", countError);
-      // This is often a RLS permission error on the 'leads' table for COUNT aggregate.
-      return [];
+      .select("assigned_to, status") // Only need these two columns for counting
+      .not('assigned_to', 'is', null); // Only leads assigned to someone
+
+    if (leadsError) {
+        console.error("CRITICAL LEAD FETCH ERROR (RLS likely):", leadsError);
+        return [];
     }
 
-    // 3. Process raw data into the final structured format
+    // 3. --- Grouping Logic (in Next.js Server Component) ---
     const summaryMap = new Map<string, TelecallerSummary>();
 
-    // Initialize the map with all users (even those with 0 leads)
+    // Initialize map with all users
     users.forEach(user => {
       summaryMap.set(user.id, {
         telecallerId: user.id,
@@ -79,29 +76,26 @@ async function getTelecallerLeadSummary(): Promise<TelecallerSummary[]> {
       });
     });
 
-    // Populate counts from the query result
-    leadCountsRaw.forEach(item => {
-      const telecallerId = item.assigned_to;
-      const count = item.count;
-      const status = item.status; 
+    // Process leads and populate counts
+    leads.forEach(lead => {
+      const telecallerId = lead.assigned_to;
+      const status = lead.status;
 
       if (telecallerId && summaryMap.has(telecallerId) && status) {
         const summary = summaryMap.get(telecallerId)!;
-        summary.statusCounts[status] = count;
-        summary.totalLeads += count;
+        summary.statusCounts[status] = (summary.statusCounts[status] || 0) + 1;
+        summary.totalLeads += 1;
       }
     });
 
-    // Convert map to array and sort by total leads (descending)
-    const summaryArray = Array.from(summaryMap.values())
+    // Final array, sorted by total leads
+    return Array.from(summaryMap.values())
+      .filter(tc => tc.totalLeads > 0) // Only show telecallers with at least one lead
       .sort((a, b) => b.totalLeads - a.totalLeads);
 
-    return summaryArray;
-    
   } catch (e) {
-    // Catch any unexpected runtime errors (like environment variable access failure)
+    // Catch any unexpected runtime errors
     console.error("CRITICAL UNHANDLED ERROR IN getTelecallerLeadSummary:", e);
-    // Return an empty array to prevent the page from crashing the server render
     return [];
   }
 }
@@ -123,7 +117,7 @@ export default async function TelecallerLeadSummaryPage() {
       </div>
 
       <p className="text-gray-500">
-        This table displays the **total available leads** for each telecaller, broken down by their current **status**, showing only the numbers (counts).
+        This table displays the **total available leads** for each telecaller, broken down by their current **status**, showing only the numbers (counts) as requested.
       </p>
       
       {/* Summary Table Card */}
@@ -133,7 +127,7 @@ export default async function TelecallerLeadSummaryPage() {
             <Users className="h-5 w-5" />
             Lead Distribution by Telecaller
             <Badge variant="secondary" className="ml-2">
-              Showing {summaryData.length} Telecallers with Leads
+              Showing {summaryData.length} Telecallers
             </Badge>
           </CardTitle>
         </CardHeader>
@@ -182,7 +176,7 @@ export default async function TelecallerLeadSummaryPage() {
                 {summaryData.length === 0 && (
                     <TableRow>
                         <TableCell colSpan={allStatuses.length + 2} className="h-24 text-center text-gray-500">
-                            No assigned leads found or a connection error occurred.
+                            No assigned leads found or a data fetching error occurred.
                         </TableCell>
                     </TableRow>
                 )}
