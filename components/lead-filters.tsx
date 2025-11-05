@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label" // <--- Import Label
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Search, X } from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
@@ -23,7 +24,7 @@ export function LeadFilters({ telecallers }: LeadFiltersProps) {
   const [assignedTo, setAssignedTo] = useState(searchParams.get("assigned_to") || "all")
   const [telecallerStatus, setTelecallerStatus] = useState<Record<string, boolean>>({})
 
-  // --- NEW FILTER STATES ---
+  // --- NEW FILTER STATES (Keeping current logic for initial values) ---
   const [dateFrom, setDateFrom] = useState(searchParams.get("date_from") || "")
   const [dateTo, setDateTo] = useState(searchParams.get("date_to") || "")
   const [lastCallFrom, setLastCallFrom] = useState(searchParams.get("last_call_from") || "")
@@ -92,9 +93,24 @@ export function LeadFilters({ telecallers }: LeadFiltersProps) {
     router.push("/admin/leads")
   }
 
+  /**
+   * Helper function to set date ranges for Lead Creation Date.
+   * Clears Last Call Date filters for simplicity in quick range setting.
+   */
+  const setQuickDateRange = (days: number) => {
+    const today = new Date().toISOString().split("T")[0]
+    const pastDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+
+    setDateFrom(pastDate)
+    setDateTo(today)
+    // Optionally clear other date filters when a quick range is applied
+    setLastCallFrom("") 
+    setLastCallTo("")
+  }
+
   return (
     <div className="space-y-4">
-      {/* Primary Select Filters (can use a larger grid layout for more filters) */}
+      {/* Primary Select Filters */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4"> 
         
         <div className="relative col-span-2 lg:col-span-1">
@@ -161,7 +177,7 @@ export function LeadFilters({ telecallers }: LeadFiltersProps) {
           </SelectContent>
         </Select>
 
-        {/* --- NEW SOURCE FILTER --- */}
+        {/* --- SOURCE FILTER --- */}
         <Select value={source} onValueChange={setSource}>
           <SelectTrigger>
             <SelectValue placeholder="Filter by source" />
@@ -177,42 +193,77 @@ export function LeadFilters({ telecallers }: LeadFiltersProps) {
         </Select>
       </div>
 
-      {/* Date Range Filters */}
-      <div className="grid grid-cols-2 md:grid-cols-7 gap-7 pt-2 border-t">
-        <Input
-          type="date"
-          placeholder="Created From"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-          title="Lead Creation Date From"
-        />
+      {/* Date Range Filters (Updated with Labels and new layout) */}
+      <div className="pt-4 border-t space-y-4">
+        <h3 className="text-sm font-semibold text-gray-700">Filter by Lead Creation Date</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <Label htmlFor="date-from">Created From</Label>
+            <Input
+              id="date-from"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              title="Lead Creation Date From"
+            />
+          </div>
 
-        <Input
-          type="date"
-          placeholder="Created To"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-          title="Lead Creation Date To"
-        />
+          <div>
+            <Label htmlFor="date-to">Created To</Label>
+            <Input
+              id="date-to"
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              title="Lead Creation Date To"
+            />
+          </div>
+        </div>
 
-        <Input
-          type="date"
-          placeholder="Last Call From"
-          value={lastCallFrom}
-          onChange={(e) => setLastCallFrom(e.target.value)}
-          title="Last Call Date From"
-        />
+        {/* Quick Date Ranges for Lead Creation Date */}
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={() => setQuickDateRange(7)} className="bg-transparent">
+            Last 7 days
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setQuickDateRange(30)} className="bg-transparent">
+            Last 30 days
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setQuickDateRange(90)} className="bg-transparent">
+            Last 90 days
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setQuickDateRange(365)} className="bg-transparent">
+            Last year
+          </Button>
+        </div>
 
-        <Input
-          type="date"
-          placeholder="Last Call To"
-          value={lastCallTo}
-          onChange={(e) => setLastCallTo(e.target.value)}
-          title="Last Call Date To"
-        />
+        <h3 className="text-sm font-semibold text-gray-700 pt-4 border-t mt-4">Filter by Last Call Date</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <Label htmlFor="last-call-from">Last Call From</Label>
+            <Input
+              id="last-call-from"
+              type="date"
+              value={lastCallFrom}
+              onChange={(e) => setLastCallFrom(e.target.value)}
+              title="Last Call Date From"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="last-call-to">Last Call To</Label>
+            <Input
+              id="last-call-to"
+              type="date"
+              value={lastCallTo}
+              onChange={(e) => setLastCallTo(e.target.value)}
+              title="Last Call Date To"
+            />
+          </div>
+        </div>
       </div>
-
-      <div className="flex gap-2">
+      
+      {/* Apply/Clear Buttons */}
+      <div className="flex gap-2 pt-2">
         <Button onClick={applyFilters} className="flex items-center gap-2">
           <Search className="h-4 w-4" />
           Apply Filters
