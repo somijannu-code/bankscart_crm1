@@ -1106,6 +1106,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                 <SelectItem value="nr">nr</SelectItem>
                 <SelectItem value="self_employed">self_employed</SelectItem>
                 <SelectItem value="Disbursed">Disbursed</SelectItem>
+                <SelectItem value="follow_up">follow_up</SelectItem>
                 <SelectItem value="Not_Interested">Not Interested</SelectItem>
                 <SelectItem value="not_eligible">Not Eligible</SelectItem>
               </SelectContent>
@@ -1360,6 +1361,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                     <SelectItem value="nr">nr</SelectItem>
                     <SelectItem value="self_employed">self_employed</SelectItem>
                     <SelectItem value="Disbursed">Disbursed</SelectItem>
+                    <SelectItem value="follow_up">follow_up</SelectItem>
                     <SelectItem value="Not_Interested">Not Interested</SelectItem>
                     <SelectItem value="not_eligible">Not Eligible</SelectItem>
                   </SelectContent>
@@ -1608,6 +1610,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                             <SelectItem value="nr">nr</SelectItem>
                             <SelectItem value="self_employed">self_employed</SelectItem>
                             <SelectItem value="Disbursed">Disbursed</SelectItem>
+                            <SelectItem value="follow_up">follow_up</SelectItem>
                             <SelectItem value="Not_Interested">Not Interested</SelectItem>
                             <SelectItem value="not_eligible">Not Eligible</SelectItem>
                           </SelectContent>
