@@ -154,7 +154,9 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
   const [autoAssignRules, setAutoAssignRules] = useState({
     enabled: false,
     method: 'round-robin', 
-    criteria: ''
+    criteria: '',
+    reassignNR: false, // New rule: Reassign NR > 48h
+    reassignInterested: false // New rule: Reassign Interested > 72h
   })
   
   // Success/Error Messages
@@ -355,10 +357,8 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     currentPage * pageSize
   )
   
-  // UPDATED: Handle Page Size Change for Input Field
   const handlePageSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
-    // Allow empty string to let user delete
     if (value === "") {
       setPageSize(0)
       return
@@ -476,9 +476,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     setSmsBody("")
   }
 
-  // --- UPDATED BULK ASSIGN LOGIC ---
   const handleBulkAssign = async () => {
-    // Check if any telecallers or leads are selected
     if (bulkAssignTo.length === 0 || selectedLeads.length === 0) return
 
     try {
@@ -486,9 +484,8 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       const assignedById = user?.id
 
       const updates: any[] = []
-      const telecallerIds = bulkAssignTo; // Array of IDs
+      const telecallerIds = bulkAssignTo; 
 
-      // Distribute leads equally among telecallers using round-robin
       selectedLeads.forEach((leadId, index) => {
           const telecallerId = telecallerIds[index % telecallerIds.length];
           updates.push({
@@ -587,16 +584,50 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     if (!autoAssignRules.enabled || telecallers.length === 0) return
 
     try {
-      const unassignedLeads = enrichedLeads.filter(l => !l.assigned_to)
-      if (unassignedLeads.length === 0) {
-        alert('No unassigned leads found')
-        return
-      }
-
       const { data: { user } } = await supabase.auth.getUser()
       const assignedById = user?.id
       let updates: any[] = []
+      const now = new Date()
 
+      // 1. Identify Unassigned Leads
+      const unassignedLeads = enrichedLeads.filter(l => !l.assigned_to)
+
+      // 2. Identify Stale Leads for Re-assignment (if enabled)
+      let leadsToReassign: Lead[] = []
+      
+      if (autoAssignRules.reassignNR) {
+        // NR leads older than 48 hours
+        const staleNR = enrichedLeads.filter(l => {
+          if (l.status !== 'nr') return false
+          const lastContact = lastCallTimestamps[l.id] || l.last_contacted
+          if (!lastContact) return false // Ignore if never contacted
+          const diffHours = (now.getTime() - new Date(lastContact).getTime()) / (1000 * 60 * 60)
+          return diffHours > 48
+        })
+        leadsToReassign = [...leadsToReassign, ...staleNR]
+      }
+
+      if (autoAssignRules.reassignInterested) {
+        // Interested leads older than 72 hours
+        const staleInterested = enrichedLeads.filter(l => {
+          if (l.status !== 'Interested') return false
+          const lastContact = lastCallTimestamps[l.id] || l.last_contacted
+          if (!lastContact) return false
+          const diffHours = (now.getTime() - new Date(lastContact).getTime()) / (1000 * 60 * 60)
+          return diffHours > 72
+        })
+        leadsToReassign = [...leadsToReassign, ...staleInterested]
+      }
+
+      // Remove duplicates from leadsToReassign (if any overlap logic exists)
+      leadsToReassign = [...new Set(leadsToReassign)]
+
+      if (unassignedLeads.length === 0 && leadsToReassign.length === 0) {
+        alert('No leads found matching criteria (Unassigned or Stale)')
+        return
+      }
+
+      // -- Process Unassigned Leads --
       if (autoAssignRules.method === 'round-robin') {
         unassignedLeads.forEach((lead, index) => {
           const telecallerId = telecallers[index % telecallers.length].id
@@ -635,14 +666,44 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         })
       }
 
+      // -- Process Re-assignment (Status -> New, New Telecaller) --
+      leadsToReassign.forEach((lead, index) => {
+        // Find a telecaller different from current (if possible)
+        let availableTelecallers = telecallers.filter(t => t.id !== lead.assigned_to)
+        
+        // If no other telecaller exists (e.g., only 1 user), fall back to original pool
+        if (availableTelecallers.length === 0) availableTelecallers = telecallers
+
+        // Pick one (Round Robin style based on index)
+        const newTelecallerId = availableTelecallers[index % availableTelecallers.length].id
+
+        updates.push(
+            supabase
+              .from("leads")
+              .update({ 
+                assigned_to: newTelecallerId,
+                assigned_by: assignedById,
+                assigned_at: new Date().toISOString(),
+                status: 'new', // FORCE STATUS TO NEW
+                last_contacted: new Date().toISOString() // Optional: Mark as "touched" by system? Or keep old date? 
+                                                         // Usually better to NOT update last_contacted so history is clear, 
+                                                         // OR update it to show system action. 
+                                                         // Based on "New" status requirement, let's just reset status.
+              })
+              .eq("id", lead.id)
+        )
+      })
+
       const results = await Promise.all(updates)
       const errors = results.filter(result => result.error)
-      if (errors.length > 0) throw new Error(`Failed to auto-assign ${errors.length} leads`)
+      if (errors.length > 0) throw new Error(`Failed to process ${errors.length} lead updates`)
 
-      alert(`Successfully auto-assigned ${unassignedLeads.length} leads!`)
+      const msg = `Processed: ${unassignedLeads.length} unassigned, ${leadsToReassign.length} re-assigned.`
+      alert(`Success! ${msg}`)
       window.location.reload()
     } catch (error) {
       console.error("Error auto-assigning leads:", error)
+      alert("Error occurred during assignment. Check console.")
     }
   }
 
@@ -1632,7 +1693,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Auto-Assign Rules</DialogTitle>
-            <DialogDescription>Configure automatic lead assignment rules for unassigned leads.</DialogDescription>
+            <DialogDescription>Configure automatic lead assignment rules.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -1641,22 +1702,40 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
             </div>
             {autoAssignRules.enabled && (
               <>
-                <div>
-                  <Label htmlFor="assignment-method">Assignment Method</Label>
-                  <Select value={autoAssignRules.method} onValueChange={(value) => setAutoAssignRules(prev => ({ ...prev, method: value }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="round-robin">Round Robin</SelectItem>
-                      <SelectItem value="workload">Workload Balance</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="space-y-3 border p-3 rounded-md bg-muted/50">
+                  <h4 className="font-medium text-sm">Assignment Strategy</h4>
+                  <div>
+                    <Label htmlFor="assignment-method">Assignment Method</Label>
+                    <Select value={autoAssignRules.method} onValueChange={(value) => setAutoAssignRules(prev => ({ ...prev, method: value }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="round-robin">Round Robin</SelectItem>
+                        <SelectItem value="workload">Workload Balance</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-                <div>
-                  <Label htmlFor="assignment-criteria">Assignment Criteria</Label>
-                  <Input id="assignment-criteria" value={autoAssignRules.criteria} onChange={(e) => setAutoAssignRules(prev => ({ ...prev, criteria: e.target.value }))} placeholder="Optional: Specify criteria for assignment" />
+
+                <div className="space-y-3 border p-3 rounded-md bg-muted/50">
+                   <h4 className="font-medium text-sm">Re-Assignment Rules (Stale Leads)</h4>
+                   <div className="flex items-center justify-between">
+                    <Label htmlFor="reassign-nr" className="flex flex-col gap-1">
+                      <span>Reassign "Not Reached" > 48hrs</span>
+                      <span className="text-xs text-muted-foreground font-normal">Set status to 'New', assign new telecaller</span>
+                    </Label>
+                    <Switch id="reassign-nr" checked={autoAssignRules.reassignNR} onCheckedChange={(checked) => setAutoAssignRules(prev => ({ ...prev, reassignNR: checked }))} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="reassign-interested" className="flex flex-col gap-1">
+                      <span>Reassign "Interested" > 72hrs</span>
+                       <span className="text-xs text-muted-foreground font-normal">Set status to 'New', assign new telecaller</span>
+                    </Label>
+                    <Switch id="reassign-interested" checked={autoAssignRules.reassignInterested} onCheckedChange={(checked) => setAutoAssignRules(prev => ({ ...prev, reassignInterested: checked }))} />
+                  </div>
                 </div>
-                <Button onClick={handleAutoAssignLeads} className="w-full">
-                  <Users className="h-4 w-4 mr-2" /> Auto-Assign Unassigned Leads Now
+                
+                <Button onClick={handleAutoAssignLeads} className="w-full mt-4">
+                  <Users className="h-4 w-4 mr-2" /> Run Auto-Assign / Re-Assign Now
                 </Button>
               </>
             )}
