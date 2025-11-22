@@ -111,7 +111,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
   })
   const [currentPage, setCurrentPage] = useState(1)
   // UPDATED: Initial page size to 20, but now changeable
-  const [pageSize, setPageSize] = useState(200)
+  const [pageSize, setPageSize] = useState(40)
   const [selectedLeads, setSelectedLeads] = useState<string[]>([])
   
   // START: ADDED Date Filter State
@@ -1824,7 +1824,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
               onValueChange={handlePageSizeChange}
             >
               <SelectTrigger className="w-[80px] h-9">
-                <SelectValue placeholder="200" />
+                <SelectValue placeholder="40" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="10">10</SelectItem>
