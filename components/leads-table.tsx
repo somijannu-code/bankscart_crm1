@@ -349,15 +349,26 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
   })
 
   // Pagination
-  const totalPages = Math.ceil(filteredLeads.length / pageSize)
+  const totalPages = Math.ceil(filteredLeads.length / (pageSize > 0 ? pageSize : 1))
   const paginatedLeads = filteredLeads.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize
   )
   
-  const handlePageSizeChange = (value: string) => {
-    setPageSize(Number(value))
-    setCurrentPage(1)
+  // UPDATED: Handle Page Size Change for Input Field
+  const handlePageSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    // Allow empty string to let user delete
+    if (value === "") {
+      setPageSize(0)
+      return
+    }
+    
+    const newSize = parseInt(value)
+    if (!isNaN(newSize) && newSize > 0) {
+      setPageSize(newSize)
+      setCurrentPage(1)
+    }
   }
 
   const detectDuplicates = () => {
@@ -1496,21 +1507,15 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="text-sm text-muted-foreground">Leads per page:</div>
-            <Select value={String(pageSize)} onValueChange={handlePageSizeChange}>
-              <SelectTrigger className="w-[80px] h-9">
-                <SelectValue placeholder="40" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="20">20</SelectItem>
-                <SelectItem value="30">30</SelectItem>
-                <SelectItem value="40">40</SelectItem>
-                <SelectItem value="50">50</SelectItem>
-                <SelectItem value="100">100</SelectItem>
-                <SelectItem value="200">200</SelectItem>
-                <SelectItem value="300">300</SelectItem>
-              </SelectContent>
-            </Select>
+            {/* UPDATED: Input for Leads Per Page */}
+            <Input
+              type="number"
+              min="1"
+              max="500"
+              className="w-[80px] h-9"
+              value={pageSize}
+              onChange={handlePageSizeChange}
+            />
             <div className="text-sm text-muted-foreground">
               Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, filteredLeads.length)} of {filteredLeads.length} leads
             </div>
