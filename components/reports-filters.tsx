@@ -8,6 +8,7 @@ import {
   DropdownMenuCheckboxItem, 
   DropdownMenuContent, 
   DropdownMenuLabel, 
+  DropdownMenuItem, // <--- ADDED IMPORT
   DropdownMenuSeparator, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu"
@@ -135,20 +136,19 @@ export function ReportsFilters({ telecallers, defaultStartDate, defaultEndDate }
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-[250px]" align="start">
-              <DropdownMenuLabel>Select Telecallers</DropdownMenuLabel>
+              <DropdownMenuLabel>Filter by Telecaller</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {/* Option to clear selection (Select All) */}
-              {selectedTelecallers.length > 0 && (
-                <>
-                  <DropdownMenuCheckboxItem
-                    checked={selectedTelecallers.length === 0}
-                    onCheckedChange={() => setSelectedTelecallers([])}
-                  >
-                    All Telecallers
-                  </DropdownMenuCheckboxItem>
-                  <DropdownMenuSeparator />
-                </>
-              )}
+              
+              {/* Option to clear selection (Show All) */}
+              <DropdownMenuItem
+                onClick={() => setSelectedTelecallers([])}
+                className="cursor-pointer font-medium text-primary hover:bg-muted"
+                disabled={selectedTelecallers.length === 0}
+              >
+                Clear Selection (Show All)
+              </DropdownMenuItem>
+              
+              <DropdownMenuSeparator />
               
               <div className="max-h-[300px] overflow-y-auto">
                 {telecallers.map((tc) => (
