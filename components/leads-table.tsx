@@ -43,6 +43,10 @@ import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination"
 
+// Standard shadcn button styles for "outline" variant and "sm" size
+// We use this to manually style triggers that were failing with the Custom Button component
+const BTN_STYLE = "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3";
+
 interface Lead {
   id: string
   name: string
@@ -110,67 +114,53 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     assignedTo: true,
   })
   const [currentPage, setCurrentPage] = useState(1)
-  // UPDATED: Initial page size to 20, but now changeable
   const [pageSize, setPageSize] = useState(40)
   const [selectedLeads, setSelectedLeads] = useState<string[]>([])
   
-  // START: ADDED Date Filter State
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
   const [lastCallFrom, setLastCallFrom] = useState("")
   const [lastCallTo, setLastCallTo] = useState("")
-  // END: ADDED Date Filter State
   
-  // --- KEEPING ORIGINAL BULK ASSIGN STATE ---
   const [bulkAssignTo, setBulkAssignTo] = useState<string[]>([])
-  // ------------------------------------------
   
   const [bulkStatus, setBulkStatus] = useState<string>("")
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table')
   
-  // Saved Filters
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([])
   const [filterName, setFilterName] = useState("")
   const [showSaveFilterDialog, setShowSaveFilterDialog] = useState(false)
   
-  // Tags Management
   const [availableTags, setAvailableTags] = useState<string[]>([
     "VIP", "Hot Lead", "Referral", "Event", "Follow Up", "High Value"
   ])
   const [newTag, setNewTag] = useState("")
   const [selectedLeadForTags, setSelectedLeadForTags] = useState<Lead | null>(null)
   
-  // Email/SMS
   const [showEmailDialog, setShowEmailDialog] = useState(false)
   const [showSMSDialog, setShowSMSDialog] = useState(false)
   const [emailSubject, setEmailSubject] = useState("")
   const [emailBody, setEmailBody] = useState("")
   const [smsBody, setSmsBody] = useState("")
   
-  // Auto-assignment
   const [showAutoAssignDialog, setShowAutoAssignDialog] = useState(false)
   const [autoAssignRules, setAutoAssignRules] = useState({
     enabled: false,
-    method: 'round-robin', // round-robin, location, loan-type
+    method: 'round-robin',
     criteria: ''
   })
   
-  // Success/Error Messages
   const [successMessage, setSuccessMessage] = useState<string>("")
   const [errorMessage, setErrorMessage] = useState<string>("")
   
-  // Duplicate Detection
   const [duplicates, setDuplicates] = useState<any[]>([])
   const [showDuplicatesDialog, setShowDuplicatesDialog] = useState(false)
   
   const supabase = createClient()
   
-  // --- NEW STATE: Last Call Times ---
   const [lastCallTimestamps, setLastCallTimestamps] = useState<Record<string, string | null>>({})
-  // -----------------------------------
 
-  // Stabilize telecaller IDs array
   const allTelecallerIds = useMemo(() => {
     const ids = [
       ...leads.map(lead => lead.assigned_user?.id).filter(Boolean) as string[],
@@ -181,15 +171,12 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
 
   const { telecallerStatus, loading: statusLoading } = useTelecallerStatus(allTelecallerIds)
   
-  // --- NEW EFFECT: Fetch Last Call Times from call_logs ---
   useEffect(() => {
     const fetchLastCallTimes = async () => {
       const leadIds = leads.map(l => l.id);
       if (leadIds.length === 0) return;
 
       try {
-        // Fetch all call logs for the current set of leads, ordered by creation time descending.
-        // The first log for a given lead_id will be the latest call.
         const { data: callLogs, error } = await supabase
           .from("call_logs")
           .select("lead_id, created_at")
@@ -204,7 +191,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         const latestCalls: Record<string, string | null> = {};
         const seenLeadIds = new Set<string>();
 
-        // Process logs to find the single latest call time per lead
         for (const log of callLogs) {
           if (!seenLeadIds.has(log.lead_id)) {
             latestCalls[log.lead_id] = log.created_at;
@@ -221,21 +207,16 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
 
     fetchLastCallTimes();
   }, [leads, supabase]);
-  // --------------------------------------------------------
 
-
-  // Calculate Lead Score (0-100)
   const calculateLeadScore = (lead: Lead): number => {
     let score = 0
     
-    // Loan amount score (0-30 points)
     if (lead.loan_amount) {
       if (lead.loan_amount >= 5000000) score += 30
       else if (lead.loan_amount >= 2000000) score += 20
       else if (lead.loan_amount >= 1000000) score += 10
     }
     
-    // Recency score (0-25 points)
     if (lead.created_at) {
       const daysOld = Math.floor((Date.now() - new Date(lead.created_at).getTime()) / (1000 * 60 * 60 * 24))
       if (daysOld <= 1) score += 25
@@ -245,7 +226,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       else if (daysOld <= 30) score += 5
     }
     
-    // Status score (0-20 points)
     const statusScores: Record<string, number> = {
       'Interested': 20,
       'Documents_Sent': 18,
@@ -259,12 +239,10 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     }
     score += statusScores[lead.status] || 5
     
-    // Priority score (0-15 points)
     if (lead.priority === 'high') score += 15
     else if (lead.priority === 'medium') score += 10
     else score += 5
     
-    // Source score (0-10 points)
     const sourceScores: Record<string, number> = {
       'referral': 10,
       'website': 8,
@@ -276,7 +254,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     return Math.min(score, 100)
   }
 
-  // Enrich leads with scores
   const enrichedLeads = useMemo(() => {
     return leads.map(lead => ({
       ...lead,
@@ -285,7 +262,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     }))
   }, [leads])
 
-  // Calculate Dashboard Stats
   const dashboardStats = useMemo(() => {
     const total = enrichedLeads.length
     const today = new Date()
@@ -319,7 +295,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       l.follow_up_date && new Date(l.follow_up_date) < today
     ).length
 
-    // Status distribution
     const statusDist = enrichedLeads.reduce((acc, lead) => {
       acc[lead.status] = (acc[lead.status] || 0) + 1
       return acc
@@ -339,19 +314,16 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     }
   }, [enrichedLeads])
 
-  // Get unique sources
   const uniqueSources = useMemo(() => {
     const sources = new Set(enrichedLeads.map(l => l.source).filter(Boolean))
     return Array.from(sources)
   }, [enrichedLeads])
 
-  // Get unique tags
   const uniqueTags = useMemo(() => {
     const tags = new Set(enrichedLeads.flatMap(l => l.tags || []))
     return Array.from(tags)
   }, [enrichedLeads])
 
-  // Filter and sort leads
   const filteredLeads = enrichedLeads.filter(lead => {
     const matchesSearch = searchTerm === "" || 
       lead.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -373,16 +345,12 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     
     const matchesTag = tagFilter === "all" || (lead.tags || []).includes(tagFilter)
     
-    // NEW: Lead Creation Date Range Match
     const leadCreatedAt = new Date(lead.created_at).getTime();
     const matchesDateFrom = dateFrom === "" || leadCreatedAt >= new Date(dateFrom).getTime();
-    // To include the whole day, check up to 23:59:59.999
     const matchesDateTo = dateTo === "" || leadCreatedAt <= new Date(dateTo).setHours(23, 59, 59, 999); 
 
-    // NEW: Last Call Date Range Match (using the latest call timestamp logic from useEffect)
     const lastCalledAt = lastCallTimestamps[lead.id] ? new Date(lastCallTimestamps[lead.id]!).getTime() : 0;
     const matchesLastCallFrom = lastCallFrom === "" || lastCalledAt >= new Date(lastCallFrom).getTime();
-    // To include the whole day, check up to 23:59:59.999
     const matchesLastCallTo = lastCallTo === "" || lastCalledAt <= new Date(lastCallTo).setHours(23, 59, 59, 999);
 
     return matchesSearch && matchesStatus && matchesPriority && 
@@ -390,8 +358,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
            matchesDateFrom && matchesDateTo &&
            matchesLastCallFrom && matchesLastCallTo
   }).sort((a, b) => {
-    // Note for large datasets: The entire filteredLeads array is sorted here.
-    // For 10,000+ leads, filtering and sorting should happen on the server/database.
     let aValue = a[sortField as keyof Lead]
     let bValue = b[sortField as keyof Lead]
     
@@ -408,20 +374,17 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     return 0
   })
 
-  // Pagination
   const totalPages = Math.ceil(filteredLeads.length / pageSize)
   const paginatedLeads = filteredLeads.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize
   )
   
-  // Handle page size change, resetting to page 1
   const handlePageSizeChange = (value: string) => {
     setPageSize(Number(value))
     setCurrentPage(1)
   }
 
-  // Detect Duplicates
   const detectDuplicates = () => {
     const phoneMap = new Map<string, Lead[]>()
     const emailMap = new Map<string, Lead[]>()
@@ -453,7 +416,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     setShowDuplicatesDialog(true)
   }
 
-  // Export to CSV
   const exportToCSV = () => {
     const headers = Object.keys(visibleColumns).filter(k => visibleColumns[k])
     const csvContent = [
@@ -474,7 +436,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     a.click()
   }
 
-  // Save Filter
   const saveCurrentFilter = () => {
     const filter = {
       id: Date.now().toString(),
@@ -487,23 +448,19 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         sourceFilter,
         scoreFilter,
         tagFilter,
-        // START: ADDED Date Filter Saves
         dateFrom,
         dateTo,
         lastCallFrom,
         lastCallTo
-        // END: ADDED Date Filter Saves
       }
     }
     setSavedFilters([...savedFilters, filter])
     setFilterName("")
     setShowSaveFilterDialog(false)
     
-    // Save to localStorage
     localStorage.setItem('savedFilters', JSON.stringify([...savedFilters, filter]))
   }
 
-  // Load Filter
   const loadFilter = (filter: SavedFilter) => {
     setSearchTerm(filter.filters.searchTerm || "")
     setStatusFilter(filter.filters.statusFilter || "all")
@@ -512,15 +469,12 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     setSourceFilter(filter.filters.sourceFilter || "all")
     setScoreFilter(filter.filters.scoreFilter || "all")
     setTagFilter(filter.filters.tagFilter || "all")
-    // START: ADDED Date Filter Loads
     setDateFrom(filter.filters.dateFrom || "")
     setDateTo(filter.filters.dateTo || "")
     setLastCallFrom(filter.filters.lastCallFrom || "")
     setLastCallTo(filter.filters.lastCallTo || "")
-    // END: ADDED Date Filter Loads
   }
 
-  // Load saved filters on mount
   useEffect(() => {
     const saved = localStorage.getItem('savedFilters')
     if (saved) {
@@ -528,7 +482,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     }
   }, [])
 
-  // Handle functions
   const handleSort = (field: string) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
@@ -550,12 +503,9 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
 
   const handleBulkEmail = async () => {
     if (selectedLeads.length === 0) return
-    
-    // Implementation would connect to email service
     console.log('Sending email to', selectedLeads.length, 'leads')
     console.log('Subject:', emailSubject)
     console.log('Body:', emailBody)
-    
     setShowEmailDialog(false)
     setEmailSubject("")
     setEmailBody("")
@@ -563,29 +513,22 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
 
   const handleBulkSMS = async () => {
     if (selectedLeads.length === 0) return
-    
-    // Implementation would connect to SMS service
     console.log('Sending SMS to', selectedLeads.length, 'leads')
     console.log('Message:', smsBody)
-    
     setShowSMSDialog(false)
     setSmsBody("")
   }
 
-  // --- KEEPING ORIGINAL BULK ASSIGN FUNCTION ---
   const handleBulkAssign = async () => {
-    // Check if any telecallers or leads are selected
     if (bulkAssignTo.length === 0 || selectedLeads.length === 0) return
 
     try {
-      // Get the current user ID once
       const { data: { user } } = await supabase.auth.getUser()
       const assignedById = user?.id
 
       const updates: any[] = []
-      const telecallerIds = bulkAssignTo; // bulkAssignTo is already an array
+      const telecallerIds = bulkAssignTo;
 
-      // Distribute leads equally among telecallers using round-robin
       selectedLeads.forEach((leadId, index) => {
           const telecallerId = telecallerIds[index % telecallerIds.length];
           updates.push({
@@ -596,7 +539,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
           });
       });
 
-      // Execute all updates concurrently
       const results = await Promise.all(
           updates.map(update => 
               supabase
@@ -617,21 +559,18 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
 
       console.log(`Bulk assigned ${selectedLeads.length} leads`)
       setSelectedLeads([])
-      setBulkAssignTo([]) // Reset state to an empty array
+      setBulkAssignTo([])
       window.location.reload()
       
     } catch (error) {
       console.error("Error bulk assigning leads:", error)
     }
   }
-  // ---------------------------------------------
 
-  // --- KEEPING ORIGINAL BULK STATUS UPDATE FUNCTION ---
   const handleBulkStatusUpdate = async () => {
     if (!bulkStatus || selectedLeads.length === 0) return
 
     try {
-      // Update status for all selected leads
       const updates = selectedLeads.map(leadId => 
         supabase
           .from("leads")
@@ -642,7 +581,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
           .eq("id", leadId)
       )
 
-      // Execute all updates concurrently
       const results = await Promise.all(updates)
       
       const errors = results.filter(result => result.error)
@@ -659,18 +597,15 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       console.error("Error bulk updating lead status:", error)
     }
   }
-  // ----------------------------------------------------
 
   const handleBulkAddTag = async (tag: string) => {
     if (selectedLeads.length === 0) return
 
     try {
-      // Update tags for all selected leads
       const updates = selectedLeads.map(async (leadId) => {
         const lead = enrichedLeads.find(l => l.id === leadId)
         const currentTags = lead?.tags || []
         
-        // Only add if tag doesn't exist
         if (!currentTags.includes(tag)) {
           return supabase
             .from("leads")
@@ -716,7 +651,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       let updates: any[] = []
 
       if (autoAssignRules.method === 'round-robin') {
-        // Round-robin distribution
         unassignedLeads.forEach((lead, index) => {
           const telecallerId = telecallers[index % telecallers.length].id
           updates.push(
@@ -731,14 +665,12 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
           )
         })
       } else if (autoAssignRules.method === 'workload') {
-        // Assign to telecaller with least leads
         const leadCounts = telecallers.map(tc => ({
           id: tc.id,
           count: enrichedLeads.filter(l => l.assigned_to === tc.id).length
         }))
 
         unassignedLeads.forEach((lead) => {
-          // Find telecaller with minimum leads
           const minTelecaller = leadCounts.reduce((min, tc) => 
             tc.count < min.count ? tc : min
           )
@@ -754,7 +686,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
               .eq("id", lead.id)
           )
           
-          // Increment count for next iteration
           minTelecaller.count++
         })
       }
@@ -809,7 +740,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     }
   }
 
-  // --- KEEPING ORIGINAL CALL INITIATION LOGIC ---
   const [isCallInitiated, setIsCallInitiated] = useState(false)
 
   const handleCallInitiated = (lead: Lead) => {
@@ -831,7 +761,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         last_contacted: new Date().toISOString()
       }
 
-      // Add note if provided for Not Eligible status
       if (newStatus === "not_eligible" && note) {
         const { error: noteError } = await supabase
           .from("notes")
@@ -844,7 +773,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         if (noteError) throw noteError
       }
 
-      // Add callback date if provided for Call Back status
       if (newStatus === "follow_up" && callbackDate) {
         const { error: followUpError } = await supabase
           .from("follow_ups")
@@ -856,7 +784,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
 
         if (followUpError) throw followUpError
         
-        // Also update the lead's follow_up_date
         updateData.follow_up_date = callbackDate
       }
 
@@ -918,7 +845,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       console.error("Error assigning lead:", error)
     }
   }
-  // ---------------------------------------------
 
   const toggleLeadSelection = (leadId: string) => {
     setSelectedLeads(prev => 
@@ -995,11 +921,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
 
   return (
     <div className="space-y-6">
-      {/* Note for scalability: For 10,000+ leads, filtering/sorting/pagination 
-      should be handled by the backend (server-side) to prevent performance issues 
-      from loading the entire dataset onto the client. The current implementation 
-      performs these operations client-side. */}
-      
       {/* Success/Error Messages */}
       {successMessage && (
         <Card className="border-green-500 bg-green-50">
@@ -1143,12 +1064,11 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
 
         <div className="flex flex-wrap gap-2 w-full lg:w-auto">
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Filter className="h-4 w-4 mr-2" />
-                More Filters
-                <ChevronDown className="h-4 w-4 ml-2" />
-              </Button>
+            {/* FIX: Removed asChild and Button wrapper. Using custom styled trigger. */}
+            <DropdownMenuTrigger className={BTN_STYLE}>
+              <Filter className="h-4 w-4 mr-2" />
+              More Filters
+              <ChevronDown className="h-4 w-4 ml-2" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>Advanced Filters</DropdownMenuLabel>
@@ -1268,12 +1188,11 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
           </DropdownMenu>
 
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Layout className="h-4 w-4 mr-2" />
-                Columns
-                <ChevronDown className="h-4 w-4 ml-2" />
-              </Button>
+            {/* FIX: Removed asChild and Button wrapper. Using custom styled trigger. */}
+            <DropdownMenuTrigger className={BTN_STYLE}>
+              <Layout className="h-4 w-4 mr-2" />
+              Columns
+              <ChevronDown className="h-4 w-4 ml-2" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {Object.entries(visibleColumns).map(([key, visible]) => (
@@ -1290,23 +1209,24 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Button variant="outline" size="sm" onClick={exportToCSV}>
+          {/* FIX: Replaced Button with native button and classes to ensure onClick fires */}
+          <button className={BTN_STYLE} onClick={exportToCSV}>
             <Download className="h-4 w-4 mr-2" />
             Export
-          </Button>
+          </button>
 
-          <Button variant="outline" size="sm" onClick={detectDuplicates}>
+          {/* FIX: Replaced Button with native button and classes to ensure onClick fires */}
+          <button className={BTN_STYLE} onClick={detectDuplicates}>
             <AlertTriangle className="h-4 w-4 mr-2" />
             Duplicates
-          </Button>
+          </button>
 
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Zap className="h-4 w-4 mr-2" />
-                Actions
-                <ChevronDown className="h-4 w-4 ml-2" />
-              </Button>
+             {/* FIX: Removed asChild and Button wrapper. Using custom styled trigger. */}
+            <DropdownMenuTrigger className={BTN_STYLE}>
+              <Zap className="h-4 w-4 mr-2" />
+              Actions
+              <ChevronDown className="h-4 w-4 ml-2" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => setShowAutoAssignDialog(true)}>
@@ -1664,10 +1584,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                     
                     {visibleColumns.lastContacted && (
                       <TableCell>
-                        {/* UPDATED LOGIC: 
-                           1. Prioritize the last call time fetched from call_logs (lastCallTimestamps[lead.id]).
-                           2. Fallback to the lead.last_contacted field (general update time).
-                        */}
                         {(() => {
                           const lastContactTimestamp = lastCallTimestamps[lead.id] || lead.last_contacted;
                           
@@ -1682,7 +1598,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                                     day: 'numeric',
                                     hour: '2-digit',
                                     minute: '2-digit',
-                                    hour12: true, // Use 12-hour clock (AM/PM)
+                                    hour12: true, 
                                   })}
                                 </span>
                               </div>
@@ -1818,7 +1734,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
             <div className="text-sm text-muted-foreground">
               Leads per page:
             </div>
-            {/* Page Size Selector */}
             <Select 
               value={String(pageSize)} 
               onValueChange={handlePageSizeChange}
@@ -1849,7 +1764,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                   className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
                 />
               </PaginationItem>
-              {/* Pagination Links Logic */}
               {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
                 let pageNum
                 if (totalPages <= 5) {
@@ -1862,7 +1776,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                   pageNum = currentPage - 2 + i
                 }
                 
-                // Only render if pageNum is valid
                 if (pageNum >= 1 && pageNum <= totalPages) {
                   return (
                     <PaginationItem key={pageNum}>
@@ -1898,7 +1811,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         isCallInitiated={isCallInitiated}
       />
 
-      {/* Save Filter Dialog */}
       <Dialog open={showSaveFilterDialog} onOpenChange={setShowSaveFilterDialog}>
         <DialogContent>
           <DialogHeader>
@@ -1929,7 +1841,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Email Dialog */}
       <Dialog open={showEmailDialog} onOpenChange={setShowEmailDialog}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -1970,7 +1881,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         </DialogContent>
       </Dialog>
 
-      {/* SMS Dialog */}
       <Dialog open={showSMSDialog} onOpenChange={setShowSMSDialog}>
         <DialogContent>
           <DialogHeader>
@@ -2002,7 +1912,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Auto-Assign Rules Dialog */}
       <Dialog open={showAutoAssignDialog} onOpenChange={setShowAutoAssignDialog}>
         <DialogContent>
           <DialogHeader>
@@ -2064,7 +1973,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Duplicates Dialog */}
       <Dialog open={showDuplicatesDialog} onOpenChange={setShowDuplicatesDialog}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
@@ -2118,7 +2026,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Manage Tags Dialog */}
       <Dialog open={!!selectedLeadForTags} onOpenChange={(open) => !open && setSelectedLeadForTags(null)}>
         <DialogContent>
           <DialogHeader>
