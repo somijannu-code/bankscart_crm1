@@ -91,7 +91,9 @@ const triggerButtonClass = "inline-flex items-center justify-center whitespace-n
 const triggerGhostClass = "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-9 px-3";
 
 export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(selectedLead)
+  // FIXED: Changed useState(selectedLead) to useState(null)
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
@@ -580,7 +582,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     }
   }
 
-  // START UPDATED FUNCTION: handleAutoAssignLeads
   const handleAutoAssignLeads = async () => {
     if (!autoAssignRules.enabled || telecallers.length === 0) return
 
@@ -721,7 +722,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       alert("Error occurred during assignment. Check console.")
     }
   }
-  // END UPDATED FUNCTION: handleAutoAssignLeads
 
   const handleAddTag = async (leadId: string, tag: string) => {
     try {
