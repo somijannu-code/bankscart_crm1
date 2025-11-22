@@ -91,7 +91,7 @@ const triggerButtonClass = "inline-flex items-center justify-center whitespace-n
 const triggerGhostClass = "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-9 px-3";
 
 export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(selectedLead)
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
@@ -580,6 +580,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     }
   }
 
+  // START UPDATED FUNCTION: handleAutoAssignLeads
   const handleAutoAssignLeads = async () => {
     if (!autoAssignRules.enabled || telecallers.length === 0) return
 
@@ -589,28 +590,40 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       let updates: any[] = []
       const now = new Date()
 
-      // 1. Identify Unassigned Leads
+      // 1. Filter for Active Telecallers Only
+      const activeTelecallers = telecallers.filter(tc => {
+        const status = telecallerStatus[tc.id]
+        // Filter only those whose status is explicitly 'online' or 'available'
+        return status === 'online' || status === 'available'
+      })
+
+      if (activeTelecallers.length === 0) {
+        alert('No ACTIVE telecallers found online. Please ensure agents are logged in.')
+        return
+      }
+
+      // 2. Identify Unassigned Leads
       const unassignedLeads = enrichedLeads.filter(l => !l.assigned_to)
 
-      // 2. Identify Stale Leads for Re-assignment (if enabled)
+      // 3. Identify Stale Leads for Re-assignment (Must have an assigned_to to be re-assigned)
       let leadsToReassign: Lead[] = []
       
+      // Rule: Reassign "Not Reached" > 48hrs
       if (autoAssignRules.reassignNR) {
-        // NR leads older than 48 hours
         const staleNR = enrichedLeads.filter(l => {
-          if (l.status !== 'nr') return false
+          if (l.status !== 'nr' || !l.assigned_to) return false // Must be NR and assigned
           const lastContact = lastCallTimestamps[l.id] || l.last_contacted
-          if (!lastContact) return false // Ignore if never contacted
+          if (!lastContact) return false 
           const diffHours = (now.getTime() - new Date(lastContact).getTime()) / (1000 * 60 * 60)
           return diffHours > 48
         })
         leadsToReassign = [...leadsToReassign, ...staleNR]
       }
 
+      // Rule: Reassign "Interested" > 72hrs
       if (autoAssignRules.reassignInterested) {
-        // Interested leads older than 72 hours
         const staleInterested = enrichedLeads.filter(l => {
-          if (l.status !== 'Interested') return false
+          if (l.status !== 'Interested' || !l.assigned_to) return false // Must be Interested and assigned
           const lastContact = lastCallTimestamps[l.id] || l.last_contacted
           if (!lastContact) return false
           const diffHours = (now.getTime() - new Date(lastContact).getTime()) / (1000 * 60 * 60)
@@ -619,86 +632,88 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         leadsToReassign = [...leadsToReassign, ...staleInterested]
       }
 
-      // Remove duplicates from leadsToReassign (if any overlap logic exists)
-      leadsToReassign = [...new Set(leadsToReassign)]
+      // Combine all leads that need to be assigned/reassigned
+      const allLeadsToProcess = [...unassignedLeads, ...leadsToReassign]
+      const processedLeadIds = new Set<string>();
+      const uniqueLeadsToProcess = allLeadsToProcess.filter(lead => {
+          if (processedLeadIds.has(lead.id)) return false;
+          processedLeadIds.add(lead.id);
+          return true;
+      });
 
-      if (unassignedLeads.length === 0 && leadsToReassign.length === 0) {
-        alert('No leads found matching criteria (Unassigned or Stale)')
+      if (uniqueLeadsToProcess.length === 0) {
+        alert('No leads found matching criteria (Unassigned or Stale) for processing.')
         return
       }
+      
+      // --- Assignment Logic: Handles BOTH New Assignments and Re-assignments ---
 
-      // -- Process Unassigned Leads --
-      if (autoAssignRules.method === 'round-robin') {
-        unassignedLeads.forEach((lead, index) => {
-          const telecallerId = telecallers[index % telecallers.length].id
-          updates.push(
-            supabase
-              .from("leads")
-              .update({ 
-                assigned_to: telecallerId,
-                assigned_by: assignedById,
-                assigned_at: new Date().toISOString()
-              })
-              .eq("id", lead.id)
-          )
-        })
-      } else if (autoAssignRules.method === 'workload') {
-        const leadCounts = telecallers.map(tc => ({
+      // Calculate initial workload only for active telecallers if using the workload method
+      const leadCounts = activeTelecallers.map(tc => ({
           id: tc.id,
           count: enrichedLeads.filter(l => l.assigned_to === tc.id).length
-        }))
+      }));
+      let roundRobinIndex = 0; // Index for Round Robin assignment
 
-        unassignedLeads.forEach((lead) => {
-          const minTelecaller = leadCounts.reduce((min, tc) => 
-            tc.count < min.count ? tc : min
-          )
-          updates.push(
-            supabase
-              .from("leads")
-              .update({ 
-                assigned_to: minTelecaller.id,
-                assigned_by: assignedById,
-                assigned_at: new Date().toISOString()
-              })
-              .eq("id", lead.id)
-          )
-          minTelecaller.count++
-        })
-      }
-
-      // -- Process Re-assignment (Status -> New, New Telecaller) --
-      leadsToReassign.forEach((lead, index) => {
-        // Find a telecaller different from current (if possible)
-        let availableTelecallers = telecallers.filter(t => t.id !== lead.assigned_to)
+      uniqueLeadsToProcess.forEach((lead, index) => {
         
-        // If no other telecaller exists (e.g., only 1 user), fall back to original pool
-        if (availableTelecallers.length === 0) availableTelecallers = telecallers
+        let newTelecallerId: string | null = null;
+        const isReassign = !!lead.assigned_to; // True if lead was already assigned (Stale Lead)
+        
+        // 4. Determine Target Telecaller
+        if (autoAssignRules.method === 'round-robin') {
+            
+            let rotationPool = activeTelecallers;
+            
+            if (isReassign) {
+                // For re-assignment, exclude the current telecaller from the pool
+                const filteredPool = activeTelecallers.filter(t => t.id !== lead.assigned_to);
+                // Use the filtered pool if it's not empty, otherwise use all active
+                rotationPool = filteredPool.length > 0 ? filteredPool : activeTelecallers;
+            }
+            
+            // Assign based on the current index in the pool
+            newTelecallerId = rotationPool[roundRobinIndex % rotationPool.length].id;
+            roundRobinIndex++; // Increment index for the next lead
+            
+        } else if (autoAssignRules.method === 'workload') {
+            
+            // Find the active telecaller with the minimum current lead count
+            const minTelecaller = leadCounts.reduce((min, tc) => 
+                tc.count < min.count ? tc : min
+            );
+            newTelecallerId = minTelecaller.id;
+            minTelecaller.count++; // Increment count for subsequent leads in this batch
+        }
 
-        // Pick one (Round Robin style based on index)
-        const newTelecallerId = availableTelecallers[index % availableTelecallers.length].id
-
-        updates.push(
-            supabase
-              .from("leads")
-              .update({ 
+        if (newTelecallerId) {
+            const updatePayload: any = {
                 assigned_to: newTelecallerId,
                 assigned_by: assignedById,
-                assigned_at: new Date().toISOString(),
-                status: 'new', // FORCE STATUS TO NEW
-                last_contacted: new Date().toISOString() // Optional: Mark as "touched" by system? Or keep old date? 
-                                                         // Usually better to NOT update last_contacted so history is clear, 
-                                                         // OR update it to show system action. 
-                                                         // Based on "New" status requirement, let's just reset status.
-              })
-              .eq("id", lead.id)
-        )
-      })
+                assigned_at: new Date().toISOString()
+            };
+
+            // 5. Status Change: If it was a Re-assignment, force status to 'new'
+            if (isReassign) {
+                updatePayload.status = 'new';
+                // Reset last_contacted to start the 48/72hr timer for the new agent
+                updatePayload.last_contacted = new Date().toISOString(); 
+            }
+
+            updates.push(
+                supabase
+                .from("leads")
+                .update(updatePayload)
+                .eq("id", lead.id)
+            );
+        }
+      });
 
       const results = await Promise.all(updates)
       const errors = results.filter(result => result.error)
       if (errors.length > 0) throw new Error(`Failed to process ${errors.length} lead updates`)
 
-      const msg = `Processed: ${unassignedLeads.length} unassigned, ${leadsToReassign.length} re-assigned.`
+      const msg = `Processed: ${unassignedLeads.length} initial assignments, ${leadsToReassign.length} re-assignments.`
       alert(`Success! ${msg}`)
       window.location.reload()
     } catch (error) {
@@ -706,6 +721,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
       alert("Error occurred during assignment. Check console.")
     }
   }
+  // END UPDATED FUNCTION: handleAutoAssignLeads
 
   const handleAddTag = async (leadId: string, tag: string) => {
     try {
@@ -1703,7 +1719,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
             {autoAssignRules.enabled && (
               <>
                 <div className="space-y-3 border p-3 rounded-md bg-muted/50">
-                  <h4 className="font-medium text-sm">Assignment Strategy</h4>
+                  <h4 className="font-medium text-sm">Assignment Strategy (New/Unassigned Leads)</h4>
                   <div>
                     <Label htmlFor="assignment-method">Assignment Method</Label>
                     <Select value={autoAssignRules.method} onValueChange={(value) => setAutoAssignRules(prev => ({ ...prev, method: value }))}>
@@ -1718,17 +1734,18 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
 
                 <div className="space-y-3 border p-3 rounded-md bg-muted/50">
                    <h4 className="font-medium text-sm">Re-Assignment Rules (Stale Leads)</h4>
+                   <p className="text-xs text-muted-foreground">These rules automatically re-assign and reset lead status to 'New' if contact is missed.</p>
                    <div className="flex items-center justify-between">
                     <Label htmlFor="reassign-nr" className="flex flex-col gap-1">
                       <span>Reassign "Not Reached" > 48hrs</span>
-                      <span className="text-xs text-muted-foreground font-normal">Set status to 'New', assign new telecaller</span>
+                      <span className="text-xs text-muted-foreground font-normal">If lead status is 'nr' and last call was > 48 hours ago.</span>
                     </Label>
                     <Switch id="reassign-nr" checked={autoAssignRules.reassignNR} onCheckedChange={(checked) => setAutoAssignRules(prev => ({ ...prev, reassignNR: checked }))} />
                   </div>
                   <div className="flex items-center justify-between">
                     <Label htmlFor="reassign-interested" className="flex flex-col gap-1">
                       <span>Reassign "Interested" > 72hrs</span>
-                       <span className="text-xs text-muted-foreground font-normal">Set status to 'New', assign new telecaller</span>
+                       <span className="text-xs text-muted-foreground font-normal">If lead status is 'Interested' and last call was > 72 hours ago.</span>
                     </Label>
                     <Switch id="reassign-interested" checked={autoAssignRules.reassignInterested} onCheckedChange={(checked) => setAutoAssignRules(prev => ({ ...prev, reassignInterested: checked }))} />
                   </div>
