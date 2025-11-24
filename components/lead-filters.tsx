@@ -23,9 +23,9 @@ export function LeadFilters({ telecallers }: LeadFiltersProps) {
   const [assignedTo, setAssignedTo] = useState(searchParams.get("assigned_to") || "all")
   const [telecallerStatus, setTelecallerStatus] = useState<Record<string, boolean>>({})
 
-  // --- NEW FILTER STATES ---
-  const [dateFrom, setDateFrom] = useState(searchParams.get("date_from") || "")
-  const [dateTo, setDateTo] = useState(searchParams.get("date_to") || "")
+  // --- NEW FILTER STATES (dateFrom and dateTo removed) ---
+  // const [dateFrom, setDateFrom] = useState(searchParams.get("date_from") || "")
+  // const [dateTo, setDateTo] = useState(searchParams.get("date_to") || "")
   const [lastCallFrom, setLastCallFrom] = useState(searchParams.get("last_call_from") || "")
   const [lastCallTo, setLastCallTo] = useState(searchParams.get("last_call_to") || "")
   const [source, setSource] = useState(searchParams.get("source") || "all")
@@ -64,9 +64,9 @@ export function LeadFilters({ telecallers }: LeadFiltersProps) {
     if (priority !== "all") params.set("priority", priority)
     if (assignedTo !== "all") params.set("assigned_to", assignedTo)
 
-    // --- NEW FILTER PARAMETER APPLICATION ---
-    if (dateFrom) params.set("date_from", dateFrom)
-    if (dateTo) params.set("date_to", dateTo)
+    // --- NEW FILTER PARAMETER APPLICATION (dateFrom and dateTo removed) ---
+    // if (dateFrom) params.set("date_from", dateFrom)
+    // if (dateTo) params.set("date_to", dateTo)
     if (lastCallFrom) params.set("last_call_from", lastCallFrom)
     if (lastCallTo) params.set("last_call_to", lastCallTo)
     if (source !== "all") params.set("source", source)
@@ -81,9 +81,9 @@ export function LeadFilters({ telecallers }: LeadFiltersProps) {
     setPriority("all")
     setAssignedTo("all")
 
-    // --- NEW FILTER CLEARING ---
-    setDateFrom("")
-    setDateTo("")
+    // --- NEW FILTER CLEARING (dateFrom and dateTo removed) ---
+    // setDateFrom("")
+    // setDateTo("")
     setLastCallFrom("")
     setLastCallTo("")
     setSource("all")
@@ -177,8 +177,9 @@ export function LeadFilters({ telecallers }: LeadFiltersProps) {
         </Select>
       </div>
 
-      {/* Date Range Filters */}
+      {/* Date Range Filters (Only Last Call filters remain) */}
       <div className="grid grid-cols-2 md:grid-cols-7 gap-7 pt-2 border-t">
+        {/*
         <Input
           type="date"
           placeholder="Created From"
@@ -194,6 +195,7 @@ export function LeadFilters({ telecallers }: LeadFiltersProps) {
           onChange={(e) => setDateTo(e.target.value)}
           title="Lead Creation Date To"
         />
+        */}
 
         <Input
           type="date"
