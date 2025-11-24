@@ -23,13 +23,9 @@ export function LeadFilters({ telecallers }: LeadFiltersProps) {
   const [assignedTo, setAssignedTo] = useState(searchParams.get("assigned_to") || "all")
   const [telecallerStatus, setTelecallerStatus] = useState<Record<string, boolean>>({})
 
-  // --- NEW FILTER STATES (dateFrom and dateTo removed) ---
-  // const [dateFrom, setDateFrom] = useState(searchParams.get("date_from") || "")
-  // const [dateTo, setDateTo] = useState(searchParams.get("date_to") || "")
-  const [lastCallFrom, setLastCallFrom] = useState(searchParams.get("last_call_from") || "")
-  const [lastCallTo, setLastCallTo] = useState(searchParams.get("last_call_to") || "")
+  // --- NEW FILTER STATES (Date filters removed) ---
   const [source, setSource] = useState(searchParams.get("source") || "all")
-  // -------------------------
+  // -------------------------------------------------
 
   // Fetch telecaller status
   useEffect(() => {
@@ -64,13 +60,9 @@ export function LeadFilters({ telecallers }: LeadFiltersProps) {
     if (priority !== "all") params.set("priority", priority)
     if (assignedTo !== "all") params.set("assigned_to", assignedTo)
 
-    // --- NEW FILTER PARAMETER APPLICATION (dateFrom and dateTo removed) ---
-    // if (dateFrom) params.set("date_from", dateFrom)
-    // if (dateTo) params.set("date_to", dateTo)
-    if (lastCallFrom) params.set("last_call_from", lastCallFrom)
-    if (lastCallTo) params.set("last_call_to", lastCallTo)
+    // --- NEW FILTER PARAMETER APPLICATION (Date filters removed) ---
     if (source !== "all") params.set("source", source)
-    // ----------------------------------------
+    // -------------------------------------------------------------
 
     router.push(`/admin/leads?${params.toString()}`)
   }
@@ -81,13 +73,9 @@ export function LeadFilters({ telecallers }: LeadFiltersProps) {
     setPriority("all")
     setAssignedTo("all")
 
-    // --- NEW FILTER CLEARING (dateFrom and dateTo removed) ---
-    // setDateFrom("")
-    // setDateTo("")
-    setLastCallFrom("")
-    setLastCallTo("")
+    // --- NEW FILTER CLEARING (Date filters removed) ---
     setSource("all")
-    // ---------------------------
+    // --------------------------------------------------
     
     router.push("/admin/leads")
   }
@@ -177,41 +165,9 @@ export function LeadFilters({ telecallers }: LeadFiltersProps) {
         </Select>
       </div>
 
-      {/* Date Range Filters (Only Last Call filters remain) */}
-      <div className="grid grid-cols-2 md:grid-cols-7 gap-7 pt-2 border-t">
-        {/*
-        <Input
-          type="date"
-          placeholder="Created From"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-          title="Lead Creation Date From"
-        />
-
-        <Input
-          type="date"
-          placeholder="Created To"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-          title="Lead Creation Date To"
-        />
-        */}
-
-        <Input
-          type="date"
-          placeholder="Last Call From"
-          value={lastCallFrom}
-          onChange={(e) => setLastCallFrom(e.target.value)}
-          title="Last Call Date From"
-        />
-
-        <Input
-          type="date"
-          placeholder="Last Call To"
-          value={lastCallTo}
-          onChange={(e) => setLastCallTo(e.target.value)}
-          title="Last Call Date To"
-        />
+      {/* Date Range Filters (Removed) */}
+      <div className="pt-2 border-t">
+        {/* All date range Inputs have been removed */}
       </div>
 
       <div className="flex gap-2">
