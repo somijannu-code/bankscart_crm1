@@ -11,8 +11,7 @@ export const dynamic = 'force-dynamic';
 
 // --- Data Structures ---
 
-// UPDATED: Comprehensive list of statuses matching 'leads-table (17).tsx'
-// This ensures all leads are counted in their respective columns.
+// UPDATED: Exact match of 'value' keys from leads-table.tsx
 const LEAD_STATUSES = [
   "new",
   "contacted",
@@ -35,7 +34,7 @@ interface TelecallerSummary {
 }
 
 /**
- * Fetches all leads and users to generate a summary.
+ * Fetches ALL leads and processes the counts locally.
  */
 async function getTelecallerLeadSummary(): Promise<TelecallerSummary[]> {
   try {
@@ -51,64 +50,59 @@ async function getTelecallerLeadSummary(): Promise<TelecallerSummary[]> {
       return []; 
     }
     
-    // 2. Fetch ALL assigned leads
-    // We only need status and assigned_to to perform the count
+    // 2. Fetch ALL leads (CRITICAL FIX: Added range to bypass 1000 row default limit)
     const { data: leads, error: leadsError } = await supabase
       .from("leads")
-      .select("assigned_to, status")
-      .not('assigned_to', 'is', null);
+      .select("assigned_to, status") 
+      .not('assigned_to', 'is', null) 
+      .range(0, 9999); // <--- FIX: Fetches up to 10,000 rows. Without this, Supabase caps at 1000.
 
     if (leadsError) {
-        console.error("Error fetching leads:", leadsError);
+        console.error("CRITICAL LEAD FETCH ERROR:", leadsError);
         return [];
     }
 
     // 3. --- Grouping Logic ---
     const summaryMap = new Map<string, TelecallerSummary>();
 
-    // Initialize map with all users to ensure even users with 0 leads show up (optional)
-    // or strictly those who are assigned leads.
+    // Initialize map with all users
     users?.forEach(user => {
       summaryMap.set(user.id, {
         telecallerId: user.id,
-        telecallerName: user.full_name || "Unknown User",
+        telecallerName: user.full_name || "Unknown Telecaller",
         statusCounts: {},
         totalLeads: 0,
       });
     });
 
-    // Process leads
+    // Process leads and populate counts
     leads?.forEach((lead: any) => {
       const telecallerId = lead.assigned_to;
       const status = lead.status;
 
-      // Only process if we have a valid telecaller ID in our map
       if (telecallerId && summaryMap.has(telecallerId)) {
         const summary = summaryMap.get(telecallerId)!;
         
-        // Normalize status to handle potential case sensitivity issues if DB is messy
-        // (Though strictly matching the array is usually best)
-        
-        // Increment specific status count
+        // Increment the count for the specific status
+        // Using strict matching since we aligned LEAD_STATUSES with DB values
         summary.statusCounts[status] = (summary.statusCounts[status] || 0) + 1;
         
-        // Increment total
+        // Increment the total count
         summary.totalLeads += 1;
       }
     });
 
-    // Convert to array, filter out users with 0 leads (optional, keeps table clean), and sort
-    const results = Array.from(summaryMap.values())
+    // Final array, filter for users with leads, and sort by total leads
+    return Array.from(summaryMap.values())
       .filter(tc => tc.totalLeads > 0) 
       .sort((a, b) => b.totalLeads - a.totalLeads);
 
-    return results;
-
   } catch (e) {
-    console.error("CRITICAL UNHANDLED ERROR:", e);
+    console.error("CRITICAL UNHANDLED ERROR IN getTelecallerLeadSummary:", e);
     return [];
   }
 }
+
 
 // --- Next.js Page Component ---
 export default async function TelecallerLeadSummaryPage() {
@@ -153,6 +147,7 @@ export default async function TelecallerLeadSummaryPage() {
                       key={status} 
                       className="text-right font-semibold text-gray-700 whitespace-nowrap capitalize"
                     >
+                      {/* Formats 'self_employed' to 'Self Employed' for display */}
                       {status.replace(/_/g, " ")}
                     </TableHead>
                   ))}
@@ -161,15 +156,11 @@ export default async function TelecallerLeadSummaryPage() {
               <TableBody>
                 {summaryData.map((telecaller) => (
                   <TableRow key={telecaller.telecallerId}>
-                    <TableCell className="font-medium text-gray-900">
-                      {telecaller.telecallerName}
-                    </TableCell>
-                    
-                    {/* Total Leads Column - Highlighted */}
+                    <TableCell className="font-medium text-gray-900">{telecaller.telecallerName}</TableCell>
+                    {/* Total Leads Column */}
                     <TableCell className="text-right font-bold text-lg text-primary bg-primary/5">
                       {telecaller.totalLeads.toLocaleString()}
                     </TableCell>
-                    
                     {/* Status Count Columns */}
                     {allStatuses.map((status) => {
                       const count = telecaller.statusCounts[status] || 0;
@@ -189,7 +180,7 @@ export default async function TelecallerLeadSummaryPage() {
                 {summaryData.length === 0 && (
                     <TableRow>
                         <TableCell colSpan={allStatuses.length + 2} className="h-24 text-center text-gray-500">
-                            No assigned leads found.
+                            No assigned leads found or error fetching data.
                         </TableCell>
                     </TableRow>
                 )}
