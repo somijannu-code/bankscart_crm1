@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { 
@@ -11,7 +11,8 @@ import {
   FileText, PhoneCall, Send, Tag, Plus, Trash2,
   BarChart3, Users, DollarSign, Target, Zap,
   Layout, Table as TableIcon, Settings, Save,
-  AlertTriangle, CheckCircle2, XCircle, Sparkles, Upload
+  AlertTriangle, CheckCircle2, XCircle, Sparkles, Upload,
+  Pencil
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -41,6 +42,7 @@ import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination"
+import { cn } from "@/lib/utils"
 
 // --- Helper Functions & Constants ---
 
@@ -76,14 +78,12 @@ const KANBAN_COLUMNS: KanbanColumn[] = [
 // Simple CSV Parser Helper
 const parseCSV = (text: string) => {
   const lines = text.split('\n').filter(l => l.trim());
-  // Basic CSV split - warning: does not handle commas inside quotes perfectly
   const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, '').toLowerCase());
   
   return lines.slice(1).map(line => {
     const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
     const entry: any = {};
     headers.forEach((h, i) => {
-      // Map common CSV headers to DB fields
       if (h.includes('name')) entry.name = values[i];
       else if (h.includes('email')) entry.email = values[i];
       else if (h.includes('phone') || h.includes('contact')) entry.phone = values[i];
@@ -93,7 +93,6 @@ const parseCSV = (text: string) => {
       else if (h.includes('source')) entry.source = values[i];
       else if (h.includes('city')) entry.city = values[i];
     });
-    // Defaults
     entry.status = entry.status || 'new';
     entry.priority = entry.priority || 'medium';
     entry.created_at = new Date().toISOString();
@@ -136,12 +135,86 @@ interface LeadsTableProps {
   telecallers: Array<{ id: string; full_name: string }>
 }
 
-// Helper class for button styling to replace the Button component inside triggers
+// --- Inline Editing Component ---
+interface InlineEditableCellProps {
+    value: string | number | null;
+    onSave: (newValue: string) => Promise<void>;
+    type?: "text" | "number" | "email" | "tel";
+    className?: string;
+    suffix?: React.ReactNode;
+}
+
+const InlineEditableCell = ({ value, onSave, type = "text", className, suffix }: InlineEditableCellProps) => {
+    const [isEditing, setIsEditing] = useState(false);
+    const [currentValue, setCurrentValue] = useState(value?.toString() || "");
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    // Reset current value if prop changes (e.g. from refresh)
+    useEffect(() => {
+        setCurrentValue(value?.toString() || "");
+    }, [value]);
+
+    useEffect(() => {
+        if (isEditing && inputRef.current) {
+            inputRef.current.focus();
+        }
+    }, [isEditing]);
+
+    const handleSave = async () => {
+        setIsEditing(false);
+        if (currentValue !== (value?.toString() || "")) {
+           await onSave(currentValue);
+        }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === "Enter") {
+            handleSave();
+        } else if (e.key === "Escape") {
+            setIsEditing(false);
+            setCurrentValue(value?.toString() || "");
+        }
+    };
+
+    if (isEditing) {
+        return (
+            <div className="flex items-center gap-1">
+                <Input
+                    ref={inputRef}
+                    type={type}
+                    value={currentValue}
+                    onChange={(e) => setCurrentValue(e.target.value)}
+                    onBlur={handleSave}
+                    onKeyDown={handleKeyDown}
+                    className="h-7 text-xs px-2 min-w-[120px]"
+                />
+            </div>
+        );
+    }
+
+    return (
+        <div 
+            onClick={() => setIsEditing(true)} 
+            className={cn(
+                "cursor-pointer hover:bg-muted/50 rounded px-1.5 py-0.5 -ml-1.5 border border-transparent hover:border-border transition-colors group flex items-center gap-2",
+                !value && "text-muted-foreground italic",
+                className
+            )}
+            title="Click to edit"
+        >
+            <span className="truncate">{value || "Empty"}</span>
+            {suffix}
+            <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-30 transition-opacity flex-shrink-0" />
+        </div>
+    );
+};
+
+
+// Helper class for button styling
 const triggerButtonClass = "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3";
 const triggerGhostClass = "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-9 px-3";
 
 export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
-  // Correctly initialized to null
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   
   // View State (Table vs Board)
@@ -254,7 +327,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
         console.error("Error fetching telecaller status:", err)
       }
 
-      // 2. Fetch Call Logs for Last Contacted
+      // 2. Fetch Call Logs
       const leadIds = leads.map(l => l.id);
       if (leadIds.length === 0) return;
 
@@ -433,6 +506,31 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
     }
   }
 
+  // --- Inline Edit Handler ---
+  const handleInlineUpdate = async (leadId: string, field: string, value: string | number) => {
+    try {
+        const { error } = await supabase
+            .from("leads")
+            .update({ [field]: value })
+            .eq("id", leadId);
+
+        if (error) throw error;
+        
+        // Optimistic update via reload (matches existing patterns in file)
+        // For a true "Excel" feel, you might want to use a local state reducer, 
+        // but reload ensures consistency with server triggers/webhooks.
+        // We use window.location.reload() in other places, but for inline edits
+        // it's nicer to just let the component local state update first.
+        // The table will naturally refresh if 'leads' prop changes or on next hard refresh.
+        // To be safe and see changes reflected in sorting/filtering immediately:
+        window.location.reload(); 
+    } catch (error) {
+        console.error("Error updating lead inline:", error);
+        setErrorMessage("Failed to update field");
+    }
+  };
+
+
   const detectDuplicates = () => {
     const phoneMap = new Map<string, Lead[]>()
     const emailMap = new Map<string, Lead[]>()
@@ -573,7 +671,6 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
           throw new Error(`Failed to assign ${errors.length} leads`)
       }
 
-      console.log(`Bulk assigned ${selectedLeads.length} leads`)
       setSelectedLeads([])
       setBulkAssignTo([]) 
       window.location.reload()
@@ -1321,7 +1418,7 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                   Update Status
                 </Button>
 
-                {/* UPDATED: Manual Bulk Assignment with Status Dots */}
+                {/* Manual Bulk Assignment with Status Dots */}
                 <DropdownMenu>
                   <DropdownMenuTrigger className={`${triggerButtonClass} w-[200px] justify-between border-dashed`}>
                       {bulkAssignTo.length === 0 ? (
@@ -1494,25 +1591,36 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                         </TableCell>
                         {visibleColumns.name && (
                         <TableCell>
-                            <Link href={`/admin/leads/${lead.id}`} className="hover:text-blue-600 hover:underline cursor-pointer block">
-                            <div className="font-medium">{getSafeValue(lead.name)}</div>
+                             <div className="font-medium">
+                                <InlineEditableCell 
+                                    value={lead.name} 
+                                    onSave={(val) => handleInlineUpdate(lead.id, 'name', val)} 
+                                />
+                             </div>
                             <div className="text-xs text-muted-foreground">ID: {lead.id.slice(-8)}</div>
-                            </Link>
                         </TableCell>
                         )}
                         {visibleColumns.contact && (
                         <TableCell>
                             <div className="space-y-1">
                             <div className="flex items-center gap-1">
-                                <Phone className="h-3 w-3" />
-                                <span className="text-sm">{getSafeValue(lead.phone)}</span>
+                                <Phone className="h-3 w-3 text-muted-foreground" />
+                                <InlineEditableCell 
+                                    value={lead.phone} 
+                                    type="tel"
+                                    onSave={(val) => handleInlineUpdate(lead.id, 'phone', val)} 
+                                    className="text-sm"
+                                />
                             </div>
-                            {lead.email && (
-                                <div className="flex items-center gap-1">
-                                <Mail className="h-3 w-3" />
-                                <span className="text-sm truncate">{lead.email}</span>
-                                </div>
-                            )}
+                            <div className="flex items-center gap-1">
+                                <Mail className="h-3 w-3 text-muted-foreground" />
+                                <InlineEditableCell 
+                                    value={lead.email} 
+                                    type="email"
+                                    onSave={(val) => handleInlineUpdate(lead.id, 'email', val)} 
+                                    className="text-sm"
+                                />
+                            </div>
                             </div>
                         </TableCell>
                         )}
@@ -1520,7 +1628,10 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                         <TableCell>
                             <div className="flex items-center gap-2">
                             <Building className="h-4 w-4 text-muted-foreground" />
-                            <span>{getSafeValue(lead.company)}</span>
+                            <InlineEditableCell 
+                                value={lead.company} 
+                                onSave={(val) => handleInlineUpdate(lead.id, 'company', val)} 
+                            />
                             </div>
                         </TableCell>
                         )}
@@ -1593,7 +1704,13 @@ export function LeadsTable({ leads = [], telecallers = [] }: LeadsTableProps) {
                         )}
                         {visibleColumns.loanAmount && (
                         <TableCell>
-                            <div className="font-medium">{formatCurrency(lead.loan_amount)}</div>
+                            <InlineEditableCell 
+                                value={lead.loan_amount} 
+                                type="number"
+                                onSave={(val) => handleInlineUpdate(lead.id, 'loan_amount', val)} 
+                                className="font-medium"
+                                suffix={<span className="text-xs text-muted-foreground ml-1">INR</span>}
+                            />
                         </TableCell>
                         )}
                         {visibleColumns.loanType && (
